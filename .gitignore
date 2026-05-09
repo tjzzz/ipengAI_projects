@@ -1,6 +1,7 @@
 # Ignore everything at root
 /*
 !.gitignore
+!README.md
 
 # But allow the skills directory itself
 !/skills
