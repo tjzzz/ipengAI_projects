@@ -57,6 +57,43 @@ metadata:
 详细步骤如下：`guides/step1-requirement-parser.md`
 
 
+### 付费需求登记（飞书）
+
+如果用户说"这是一个付费订单"，或者“登记一下”等，则需要从项目配置中提取相关信息，登记到飞书表格中。
+
+| 字段 | 值 |
+|------|-----|
+| 订单id | 项目目录名，如 `2026-05-09_Credit_Card_Debt_Intervention` |
+| 收入 | 字数 × 350元/千字 |
+| 月份 | 当前月份 |
+| 任务截止日期 | 客户要求 |
+| 写手 | zzzheng / Eden |
+| 订单来源 | 客户来源 |
+
+#### 登记命令
+
+```bash
+# 从 project.yaml 提取信息后登记
+NODE_OPTIONS="" lark-cli base +record-upsert \
+  --base-token K5SXbNDiWaiYO4s6EWhcPn2unef \
+  --table-id tblQ1965U6EyRAIq \
+  --json '{
+    "订单id": "<项目目录名>",
+    "收入": 613,
+    "成本": 0,
+    "月份": "2026-05-01 00:00:00",
+    "任务截止日期": "2026-05-14 00:00:00",
+    "写手": ["zzzheng"],
+    "订单来源": "xxx",
+    "是否结单": "否",
+    "备注": "项目名称 - 2000字"
+  }'
+```
+
+> ⚠️ lark-cli 需提前安装配置
+
+
+
 ## step2. 报告撰写
 
 首要原则：尽量用简单的单词和句式来写，写作风格要贴近真人而不是ai
@@ -79,7 +116,7 @@ metadata:
 
 **文件结构：**
 ```
-~/.workbuddy/workspace-data-agent/projects/${PROJECT_NAME}/
+~/.workbuddy/agents/data-agent/projects/${PROJECT_NAME}/
     ├─ project.yaml             # 项目配置
     ├─ output/                  # 报告输出
     │  ├─ essay_draft.md        # 初版原始文件
@@ -134,7 +171,7 @@ delivery:
   delivered_at: "2026-05-09T18:00"
 ```
 
-**输出位置**: `~/.workbuddy/workspace-data-agent/projects/日期_项目名称/output/`
+**输出位置**: `~/.workbuddy/agents/data-agent/projects/日期_项目名称/output/`
 
 
 # 记忆机制

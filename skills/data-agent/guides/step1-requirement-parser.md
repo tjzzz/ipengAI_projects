@@ -84,47 +84,9 @@ delivery:
 
 如需补充信息，直接编辑 `project.yaml`：
 ```bash
-cd ~/.workbuddy/workspace-data-agent/projects/2026-05-09_xxx
+cd ~/.workbuddy/agents/data-agent/projects/2026-05-09_xxx
 vim project.yaml
 ```
-
----
-
-## 付费需求登记（飞书）
-
-### 登记信息
-
-| 字段 | 值 |
-|------|-----|
-| 订单id | 项目目录名，如 `2026-05-09_Credit_Card_Debt_Intervention` |
-| 收入 | 字数 × 350元/千字 |
-| 月份 | 当前月份 |
-| 任务截止日期 | 客户要求 |
-| 写手 | zzzheng / Eden |
-| 订单来源 | 客户来源 |
-
-### 登记命令
-
-```bash
-# 从 project.yaml 提取信息后登记
-NODE_OPTIONS="" lark-cli base +record-upsert \
-  --base-token K5SXbNDiWaiYO4s6EWhcPn2unef \
-  --table-id tblQ1965U6EyRAIq \
-  --json '{
-    "订单id": "<项目目录名>",
-    "收入": 613,
-    "成本": 0,
-    "月份": "2026-05-01 00:00:00",
-    "任务截止日期": "2026-05-14 00:00:00",
-    "写手": ["zzzheng"],
-    "订单来源": "xxx",
-    "是否结单": "否",
-    "备注": "项目名称 - 2000字"
-  }'
-```
-
-> ⚠️ lark-cli 需提前安装配置
-
 ---
 
 ## 任务确认
