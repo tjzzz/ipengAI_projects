@@ -1,4 +1,5 @@
 /* ========== DOM REFS ========== */
+/* Note: These may be null on pages like /orders — guard with null checks */
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const textInput = document.getElementById('text-input');
@@ -11,27 +12,29 @@ let uploadedFile = null;
 // Store latest result info for download
 let latestResult = null;
 
-// Click to upload
-dropZone.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) handleFileSelect(file);
-});
+// Click to upload (only on main page)
+if (dropZone && fileInput) {
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleFileSelect(file);
+    });
 
-// Drag & drop
-dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-});
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('dragover');
-});
-dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
-});
+    // Drag & drop
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileSelect(file);
+    });
+}
 
 function handleFileSelect(file) {
     const ext = file.name.split('.').pop().toLowerCase();
@@ -44,17 +47,22 @@ function handleFileSelect(file) {
         return;
     }
     uploadedFile = file;
-    dropZone.classList.add('has-file');
-    dropZone.querySelector('.drop-text').textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    textInput.value = '';
+    if (dropZone) {
+        dropZone.classList.add('has-file');
+        const dropTextEl = dropZone.querySelector('.drop-text');
+        if (dropTextEl) dropTextEl.textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    }
+    if (textInput) textInput.value = '';
     showToast(`已选择文件：${file.name}`, 'success');
 }
 
 /* ========== ANALYZE ========== */
-uploadForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await analyzeText();
-});
+if (uploadForm) {
+    uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await analyzeText();
+    });
+}
 
 async function analyzeText() {
     showLoading();
@@ -90,8 +98,8 @@ async function analyzeText() {
         }
     } catch (err) {
         hideLoading();
-        showToast('分析出错，请重试', 'error');
-        console.error(err);
+        showToast(getNetworkErrorMessage(err), 'error');
+        console.error('分析出错:', err);
     }
 }
 
@@ -142,64 +150,202 @@ function showOverLimitUpgrade(data) {
         dropZone.querySelector('.drop-text').textContent = '拖拽文档到此处，或 点击选择文件';
     }
 
-    // Update the score card with upgrade prompt
-    const scoreCard = document.getElementById('score-card');
     const wordCount = data.word_count;
-    const maxFree = data.max_free_words;
-    const price = data.price || (wordCount / 1000 * 7).toFixed(2);
+    const price = data.price || (wordCount / 1000 * 14.9).toFixed(2);
 
-    scoreCard.innerHTML = `
-        <div class="over-limit-card" style="width:100%;text-align:center;padding:20px;">
-            <div style="font-size:3rem;margin-bottom:16px;">📏</div>
-            <h3 style="margin-bottom:12px;font-size:1.3rem;">文档超长，需付费检测</h3>
-            <p style="color:#6b7280;margin-bottom:8px;">
-                你的文档共 <strong>${wordCount}</strong> 词，免费检测仅支持 <strong>${maxFree}</strong> 词以内。
-            </p>
-            <ul style="list-style:none;padding:0;margin:16px 0;text-align:left;display:inline-block;">
-                <li style="padding:4px 0;color:#374151;">✅ 全文 AI 检测 + 段落级分析</li>
-                <li style="padding:4px 0;color:#374151;">✅ AI 降率改写 + 7 天无限修改</li>
-                <li style="padding:4px 0;color:#374151;">✅ 不达标退款保障</li>
-            </ul>
-            <div style="margin:16px 0;font-size:1.2rem;">
-                <span style="color:#6b7280;">预估费用</span>
-                <strong style="color:#4f46e5;font-size:1.5rem;margin-left:8px;">¥${price}</strong>
-            </div>
-            <button class="btn btn-primary btn-lg" onclick="startPaidAnalysis()" style="margin-top:8px;">
-                💳 付费检测并改写
-            </button>
-            <p style="color:#9ca3af;font-size:0.85rem;margin-top:12px;">
-                💡 支付后 7 天内可无限次修改，不达标可退款
-            </p>
-        </div>
-    `;
+    // Don't destroy score-card — keep the SVG ring structure intact.
+    // Use the existing payment modal instead.
 
-    // Hide other sections
+    // Clear sub-sections (they're empty in over-limit case, but be safe)
     document.getElementById('sub-scores').innerHTML = '';
     document.getElementById('suggestions-list').innerHTML = '';
     document.getElementById('paragraph-list').innerHTML = '';
+    document.querySelector('.result-actions').style.display = 'none';
 
     scrollToResults();
+
+    // Show payment modal with loading state
+    showPaymentModal();
+    document.getElementById('pay-word-count').textContent = wordCount + ' 词';
+    document.getElementById('pay-price').textContent = '¥' + price;
+    document.getElementById('pay-btn-price').textContent = price;
+    document.getElementById('pay-btn').disabled = true;
+    document.getElementById('pay-btn').innerHTML = '⏳ 正在生成支付订单...';
+
+    // Hide the default QR section and mock payment area until order is created
+    document.getElementById('payment-qr-section').style.display = 'none';
+
+    // Call API to create payment order
+    createPaymentOrder(wordCount, price, 'academic');
 }
 
-async function startPaidAnalysis() {
-    // 1. Check login
+async function createPaymentOrder(wordCount, price, mode = 'academic') {
+    // Check login first
     if (!currentUser) {
-        // Store intent and show auth modal
         sessionStorage.setItem('pendingPaidAnalysis', 'true');
         showAuthModal('login');
-        showToast('请先登录，登录后将自动跳转到付费检测', 'info');
+        showToast('请先登录，登录后将自动创建订单', 'info');
         return;
     }
 
-    // 2. Check we have text
     const text = getCurrentText();
     if (!text) {
         showToast('没有可分析的文本，请重新上传', 'error');
         return;
     }
 
-    // 3. Show payment modal directly — user can preview and pay
-    showPaymentModal();
+    try {
+        const resp = await fetch('/api/create-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, mode: mode || 'academic' })
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            if (data.login_required) {
+                sessionStorage.setItem('pendingPaidAnalysis', 'true');
+                closePaymentModal();
+                showAuthModal('login');
+                return;
+            }
+            showToast(data.error, 'error');
+            closePaymentModal();
+            return;
+        }
+
+        // Render payment UI with QR code in modal
+        renderPaymentQR(data.order, wordCount, price);
+
+        // Start polling for payment status
+        startPaymentPolling(data.order.order_id);
+
+    } catch (err) {
+        showToast(getNetworkErrorMessage(err), 'error');
+        console.error('创建订单失败:', err);
+        closePaymentModal();
+    }
+}
+
+function renderPaymentQR(order, wordCount, price) {
+    const qrCode = order.qr_code;
+
+    // Update payment modal content instead of destroying score-card
+    document.getElementById('pay-word-count').textContent = wordCount + ' 词';
+    document.getElementById('pay-price').textContent = '¥' + parseFloat(price).toFixed(2);
+    document.getElementById('qr-pay-price').textContent = '¥' + parseFloat(price).toFixed(2);
+
+    // Hide default payment button and show QR section in modal
+    document.getElementById('pay-btn').style.display = 'none';
+    const qrSection = document.getElementById('payment-qr-section');
+    qrSection.style.display = 'block';
+
+    // Reset poll status
+    document.getElementById('poll-status').innerHTML = '⏳ 等待支付中...';
+    document.getElementById('poll-timer').textContent = '';
+
+    // Mock payment button handler (re-attach each time to avoid duplicates)
+    const mockBtn = document.getElementById('mock-pay-btn');
+    if (mockBtn) {
+        // Remove old listeners by cloning
+        const newMockBtn = mockBtn.cloneNode(true);
+        mockBtn.parentNode.replaceChild(newMockBtn, mockBtn);
+        newMockBtn.addEventListener('click', async () => {
+            newMockBtn.disabled = true;
+            newMockBtn.textContent = '处理中...';
+            try {
+                const resp = await fetch(`/api/test/mock-payment/${order.order_id}`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('支付模拟成功！', 'success');
+                    document.getElementById('poll-status').innerHTML = '✅ 支付成功，正在改写...';
+                } else {
+                    showToast(data.error || '模拟失败', 'error');
+                    newMockBtn.disabled = false;
+                    newMockBtn.textContent = '🧪 模拟支付成功（测试用）';
+                }
+            } catch (err) {
+                showToast('请求失败', 'error');
+                newMockBtn.disabled = false;
+                newMockBtn.textContent = '🧪 模拟支付成功（测试用）';
+            }
+        });
+    }
+
+    // Render QR code using qrcode.js
+    const container = document.getElementById('qrcode-container');
+    if (container) {
+        container.innerHTML = '';
+        if (qrCode && typeof QRCode !== 'undefined') {
+            new QRCode(container, {
+                text: qrCode,
+                width: 150,
+                height: 150,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.M
+            });
+        } else if (qrCode) {
+            // Fallback if qrcode.js not loaded - show QR string as link
+            container.innerHTML = `<a href="${qrCode}" target="_blank" style="color:var(--primary);font-size:0.85rem;">点击打开支付宝付款</a>`;
+        }
+    }
+}
+
+let pollInterval = null;
+let pollCount = 0;
+const MAX_POLL_COUNT = 200; // 10 minutes at 3-second intervals
+
+function startPaymentPolling(orderId) {
+    // Clear any existing polling
+    if (pollInterval) {
+        clearInterval(pollInterval);
+    }
+    pollCount = 0;
+
+    pollInterval = setInterval(async () => {
+        pollCount++;
+        if (pollCount > MAX_POLL_COUNT) {
+            clearInterval(pollInterval);
+            document.getElementById('poll-status').innerHTML = '⏰ 订单已超时，请重新检测';
+            return;
+        }
+
+        // Update timer display (mm:ss format)
+        const remainingSecs = (MAX_POLL_COUNT - pollCount) * 3;
+        const mm = String(Math.floor(remainingSecs / 60)).padStart(2, '0');
+        const ss = String(remainingSecs % 60).padStart(2, '0');
+        document.getElementById('poll-timer').textContent = `${mm}:${ss}`;
+
+        try {
+            const resp = await fetch(`/api/payment-status/${orderId}`);
+            const data = await resp.json();
+
+            if (data.payment_status === 'paid' || data.status === 'processing') {
+                document.getElementById('poll-status').innerHTML = '✅ 支付成功，正在改写...';
+            }
+
+            if (data.status === 'completed' && data.rewritten) {
+                clearInterval(pollInterval);
+                // Show rewrite result
+                displayRewriteResult(data);
+                showToast('改写完成！', 'success');
+            }
+        } catch (err) {
+            // Silently continue polling on error
+        }
+    }, 3000);
+}
+
+// Legacy functions kept for backward compatibility but not used in new flow
+async function startPaidAnalysis() {
+    if (!currentUser) {
+        sessionStorage.setItem('pendingPaidAnalysis', 'true');
+        showAuthModal('login');
+        showToast('请先登录，登录后将自动跳转到付费检测', 'info');
+        return;
+    }
+    createPaymentOrder();
 }
 
 // Listen for login completion to resume paid analysis
@@ -214,16 +360,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) { /* ignore */ }
     }
 
-    // Pending paid analysis after login
+    // Pending paid analysis after login - auto create payment order
     const pendingPaid = sessionStorage.getItem('pendingPaidAnalysis');
     if (pendingPaid) {
         sessionStorage.removeItem('pendingPaidAnalysis');
-        // Small delay to let the page and user session fully settle
         setTimeout(() => {
-            const text = getCurrentText();
-            if (text) {
-                showPaymentModal();
-            }
+            createPaymentOrder();
         }, 800);
     }
 });
@@ -402,7 +544,10 @@ function hideLoading() {
 let currentUser = null;
 
 // Check login status on page load
-document.addEventListener('DOMContentLoaded', checkLoginStatus);
+let loginStatusPromise = null;
+document.addEventListener('DOMContentLoaded', () => {
+    loginStatusPromise = checkLoginStatus();
+});
 
 async function checkLoginStatus() {
     try {
@@ -442,24 +587,35 @@ function updateNavbar(user) {
 }
 
 function showAuthModal(tab) {
-    document.getElementById('auth-modal').style.display = 'flex';
+    const modal = document.getElementById('auth-modal');
+    modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     switchAuthTab(tab);
+    // Focus the close button for accessibility
+    const closeBtn = modal.querySelector('.modal-close');
+    if (closeBtn) setTimeout(() => closeBtn.focus(), 100);
 }
 
 function closeAuthModal() {
-    document.getElementById('auth-modal').style.display = 'none';
+    const modal = document.getElementById('auth-modal');
+    modal.style.display = 'none';
     document.body.style.overflow = '';
     // Clear errors
     document.getElementById('login-error').textContent = '';
     document.getElementById('register-error').textContent = '';
     document.getElementById('register-success').textContent = '';
+    // Return focus to login button
+    const loginBtn = document.getElementById('login-btn');
+    if (loginBtn) loginBtn.focus();
 }
 
 // Close auth modal on overlay click
-document.getElementById('auth-modal').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeAuthModal();
-});
+const authModalEl = document.getElementById('auth-modal');
+if (authModalEl) {
+    authModalEl.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeAuthModal();
+    });
+}
 
 function switchAuthTab(tab) {
     // Update tabs
@@ -510,7 +666,8 @@ async function handleLogin() {
         document.getElementById('login-email').value = '';
         document.getElementById('login-password').value = '';
     } catch (err) {
-        errorEl.textContent = '登录失败，请重试';
+        errorEl.textContent = '登录失败：' + getNetworkErrorMessage(err);
+        console.error('登录出错:', err);
     }
 }
 
@@ -562,7 +719,8 @@ async function handleRegister() {
         document.getElementById('register-password').value = '';
         document.getElementById('register-confirm').value = '';
     } catch (err) {
-        errorEl.textContent = '注册失败，请重试';
+        errorEl.textContent = '注册失败：' + getNetworkErrorMessage(err);
+        console.error('注册出错:', err);
     }
 }
 
@@ -579,18 +737,57 @@ async function logout() {
 
 /* ========== PAYMENT ========== */
 function showPaymentModal() {
-    document.getElementById('payment-modal').style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+    const modal = document.getElementById('payment-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        // Focus the close button for accessibility
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) setTimeout(() => closeBtn.focus(), 100);
+    }
 }
 
 function closePaymentModal() {
-    document.getElementById('payment-modal').style.display = 'none';
-    document.body.style.overflow = '';
+    const modal = document.getElementById('payment-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+
+        // Restore default payment UI state
+        const payBtn = document.getElementById('pay-btn');
+        if (payBtn) {
+            payBtn.style.display = '';
+            payBtn.disabled = false;
+            payBtn.innerHTML = '💳 确认支付 ¥<span id="pay-btn-price">0.00</span>';
+        }
+        const qrSection = document.getElementById('payment-qr-section');
+        if (qrSection) qrSection.style.display = 'none';
+
+        // Return focus to the element that triggered the modal
+        const rewriteBtn = document.getElementById('rewrite-btn');
+        if (rewriteBtn) rewriteBtn.focus();
+    }
 }
 
 // Close modal on overlay click
-document.getElementById('payment-modal').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closePaymentModal();
+const paymentModal = document.getElementById('payment-modal');
+if (paymentModal) {
+    paymentModal.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closePaymentModal();
+    });
+}
+
+// Global Escape key handler - closes any visible modal
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const paymentModalEl = document.getElementById('payment-modal');
+        const authModalEl = document.getElementById('auth-modal');
+        if (paymentModalEl && paymentModalEl.style.display === 'flex') {
+            closePaymentModal();
+        } else if (authModalEl && authModalEl.style.display === 'flex') {
+            closeAuthModal();
+        }
+    }
 });
 
 async function previewRewrite() {
@@ -622,7 +819,8 @@ async function previewRewrite() {
         document.getElementById('preview-orig-score').textContent = `${data.original_score}%`;
         document.getElementById('preview-new-score').textContent = `${data.rewritten_score}%`;
     } catch (err) {
-        showToast('预览出错', 'error');
+        showToast(getNetworkErrorMessage(err), 'error');
+        console.error('预览出错:', err);
     } finally {
         document.getElementById('preview-btn').disabled = false;
         document.getElementById('preview-btn').textContent = '👁️ 免费预览改写效果';
@@ -637,37 +835,47 @@ async function confirmPayment() {
         return;
     }
 
-    const mode = document.getElementById('rewrite-mode').value;
     const btn = document.getElementById('pay-btn');
     btn.disabled = true;
     btn.textContent = '⏳ 处理中...';
+
+    // Show loading overlay inside the modal
+    const modal = document.getElementById('payment-modal');
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-loading-overlay';
+    overlay.innerHTML = '<div class="modal-loading-spinner"></div><div class="modal-loading-text">正在处理支付...</div>';
+    if (modal) modal.appendChild(overlay);
 
     try {
         // Step 1: Initiate rewrite
         const text = getCurrentText();
         if (!text) {
             showToast('没有可改写的文本', 'error');
+            if (overlay.parentNode) overlay.remove();
             btn.disabled = false;
-            btn.textContent = '💳 确认支付';
+            btn.innerHTML = '💳 确认支付 ¥<span id="pay-btn-price">' + document.getElementById('pay-price').textContent.replace('¥', '') + '</span>';
             return;
         }
 
         const resp1 = await fetch('/api/rewrite', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, mode })
+            body: JSON.stringify({ text, mode: 'academic' })
         });
+        overlay.querySelector('.modal-loading-text').textContent = '正在确认支付...';
         const data1 = await resp1.json();
         if (data1.error) {
             if (data1.login_required) {
                 showToast('请先登录后再支付', 'error');
+                if (overlay.parentNode) overlay.remove();
                 closePaymentModal();
                 showAuthModal('login');
                 return;
             }
             showToast(data1.error, 'error');
+            if (overlay.parentNode) overlay.remove();
             btn.disabled = false;
-            btn.textContent = '💳 确认支付';
+            btn.innerHTML = '💳 确认支付 ¥<span id="pay-btn-price">' + document.getElementById('pay-price').textContent.replace('¥', '') + '</span>';
             return;
         }
 
@@ -682,28 +890,33 @@ async function confirmPayment() {
         if (data2.error) {
             if (data2.login_required) {
                 showToast('请先登录后再支付', 'error');
+                if (overlay.parentNode) overlay.remove();
                 closePaymentModal();
                 showAuthModal('login');
                 return;
             }
             showToast(data2.error, 'error');
+            if (overlay.parentNode) overlay.remove();
             btn.disabled = false;
-            btn.textContent = '💳 确认支付';
+            btn.innerHTML = '💳 确认支付 ¥<span id="pay-btn-price">' + document.getElementById('pay-price').textContent.replace('¥', '') + '</span>';
             return;
         }
 
-        // Close modal
+        // Close modal (closePaymentModal will clean up)
+        if (overlay.parentNode) overlay.remove();
         closePaymentModal();
         btn.disabled = false;
-        btn.textContent = '💳 确认支付';
+        btn.innerHTML = '💳 确认支付 ¥<span id="pay-btn-price">' + document.getElementById('pay-price').textContent.replace('¥', '') + '</span>';
 
         // Show rewrite result
         displayRewriteResult(data2);
 
     } catch (err) {
-        showToast('处理出错', 'error');
+        showToast(getNetworkErrorMessage(err), 'error');
+        console.error('处理支付出错:', err);
+        if (overlay.parentNode) overlay.remove();
         btn.disabled = false;
-        btn.textContent = '💳 确认支付';
+        btn.innerHTML = '💳 确认支付 ¥<span id="pay-btn-price">' + document.getElementById('pay-price').textContent.replace('¥', '') + '</span>';
     }
 }
 
@@ -714,6 +927,97 @@ function getCurrentText() {
 }
 
 /* ========== REWRITE RESULT ========== */
+let _rewriteOriginalText = '';
+let _rewriteNewText = '';
+
+/**
+ * Word-level diff using simplified LCS algorithm.
+ * Returns array of { type: 'added'|'deleted'|'unchanged', text: string }
+ */
+function computeWordDiff(original, modified) {
+    // Tokenize into words + spaces/punctuation
+    function tokenize(text) {
+        return text.match(/\S+|\s+/g) || [];
+    }
+
+    const origTokens = tokenize(original);
+    const newTokens = tokenize(modified);
+    const m = origTokens.length;
+    const n = newTokens.length;
+
+    // LCS DP (limit size to avoid performance issues on very long texts)
+    const MAX_LCS = 3000;
+    let useLCS = m <= MAX_LCS && n <= MAX_LCS;
+
+    if (useLCS) {
+        // Build LCS table
+        const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                if (origTokens[i - 1] === newTokens[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                } else {
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                }
+            }
+        }
+
+        // Backtrack to produce diff
+        const result = [];
+        let i = m, j = n;
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && origTokens[i - 1] === newTokens[j - 1]) {
+                result.push({ type: 'unchanged', text: origTokens[i - 1] });
+                i--; j--;
+            } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+                result.push({ type: 'added', text: newTokens[j - 1] });
+                j--;
+            } else {
+                result.push({ type: 'deleted', text: origTokens[i - 1] });
+                i--;
+            }
+        }
+        result.reverse();
+        return result;
+    } else {
+        // Fallback for very long texts: just show as-is
+        return [{ type: 'unchanged', text: modified }];
+    }
+}
+
+/**
+ * Render diff as HTML
+ */
+function renderDiffHTML(diff) {
+    return diff.map(item => {
+        const escaped = escapeHtml(item.text);
+        if (item.type === 'added') {
+            return `<span class="diff-added">${escaped}</span>`;
+        } else if (item.type === 'deleted') {
+            return `<span class="diff-deleted">${escaped}</span>`;
+        }
+        return escaped;
+    }).join('');
+}
+
+/**
+ * Toggle between plain text and diff view
+ */
+function toggleDiffView() {
+    const checked = document.getElementById('diff-toggle-checkbox').checked;
+    const container = document.getElementById('rewrite-new-text');
+    const legend = document.getElementById('diff-legend');
+
+    if (checked) {
+        const diff = computeWordDiff(_rewriteOriginalText, _rewriteNewText);
+        container.innerHTML = renderDiffHTML(diff);
+        legend.style.display = 'flex';
+    } else {
+        container.textContent = _rewriteNewText;
+        legend.style.display = 'none';
+    }
+}
+
 function displayRewriteResult(data) {
     const section = document.getElementById('rewrite-section');
     section.style.display = 'block';
@@ -746,7 +1050,15 @@ function displayRewriteResult(data) {
     document.getElementById('improvement-badge').textContent = `↓ ${data.improvement}%`;
     document.getElementById('improvement-badge').style.background =
         data.improvement > 30 ? '#10b981' : data.improvement > 15 ? '#f59e0b' : '#6b7280';
-    document.getElementById('rewrite-new-text').textContent = data.rewritten.text;
+
+    // Store raw texts for diff comparison
+    _rewriteOriginalText = data.original.text;
+    _rewriteNewText = data.rewritten.text;
+    document.getElementById('rewrite-new-text').textContent = _rewriteNewText;
+
+    // Reset diff toggle
+    document.getElementById('diff-toggle-checkbox').checked = false;
+    document.getElementById('diff-legend').style.display = 'none';
 
     showToast(`✅ 改写完成！AI 率从 ${data.original.ai_score}% 降至 ${data.rewritten.ai_score}%`, 'success');
 
@@ -818,6 +1130,30 @@ function animateCounter(elementId, start, end, duration) {
     requestAnimationFrame(update);
 }
 
+/* ========== NETWORK ERROR HELPER ========== */
+function getNetworkErrorMessage(err) {
+    if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        return '网络连接失败，请检查网络后重试';
+    }
+    if (err instanceof TypeError && err.message.includes('NetworkError')) {
+        return '网络连接失败，请检查网络后重试';
+    }
+    if (err instanceof SyntaxError) {
+        return '服务器响应格式异常，请重试';
+    }
+    if (err.name === 'AbortError') {
+        return '请求超时，请重试';
+    }
+    if (err.message && err.message.includes('timeout')) {
+        return '请求超时，请重试';
+    }
+    if (err.message && err.message.includes('HTTP')) {
+        return '服务器暂时不可用，请稍后重试';
+    }
+    // Fallback: return a generic message that still includes the error name for debugging
+    return '请求失败，请重试';
+}
+
 /* ========== TOAST ========== */
 function showToast(message, type = 'info') {
     const existing = document.querySelector('.toast');
@@ -826,42 +1162,14 @@ function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
-    toast.style.cssText = `
-        position: fixed;
-        bottom: 24px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 12px 24px;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        z-index: 1000;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        animation: toastIn 0.3s ease;
-        background: ${type === 'error' ? '#fde8e8' : type === 'success' ? '#d1fae5' : '#eef2ff'};
-        color: ${type === 'error' ? '#991b1b' : type === 'success' ? '#065f46' : '#3730a3'};
-        max-width: 90%;
-        text-align: center;
-    `;
 
     document.body.appendChild(toast);
 
     setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transition = 'opacity 0.3s';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
-
-// Add toast animation
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes toastIn {
-        from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-        to { opacity: 1; transform: translateX(-50%) translateY(0); }
-    }
-`;
-document.head.appendChild(style);
 
 /* ========== FAQ ACCORDION ========== */
 document.querySelectorAll('.faq-question').forEach(btn => {
@@ -878,24 +1186,28 @@ document.querySelectorAll('.faq-question').forEach(btn => {
 });
 
 /* ========== KEYBOARD SHORTCUT ========== */
-textInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        analyzeText();
-    }
-});
+if (textInput) {
+    textInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            analyzeText();
+        }
+    });
+}
 
 /* ========== PARAGRAPH CLICK (Event Delegation) ========== */
-document.getElementById('paragraph-list').addEventListener('click', (e) => {
-    const item = e.target.closest('.paragraph-item');
-    if (item) {
-        const index = item.dataset.paragraph;
-        console.log(`Show detail for paragraph ${index}`);
-    }
-});
+const paragraphListEl = document.getElementById('paragraph-list');
+if (paragraphListEl) {
+    paragraphListEl.addEventListener('click', (e) => {
+        const item = e.target.closest('.paragraph-item');
+        if (item) {
+            const index = item.dataset.paragraph;
+            showToast('段落详情功能即将上线', 'info');
+        }
+    });
+}
 
 function showDetail(paragraphIndex) {
-    // Placeholder for future paragraph detail view
-    console.log(`Show detail for paragraph ${paragraphIndex}`);
+    showToast('段落详情功能即将上线', 'info');
 }
 
 /* ========== ORDERS PAGE ========== */
@@ -904,10 +1216,20 @@ let currentOrderPage = 1;
 let orderTotalPages = 1;
 
 async function loadOrders(page) {
+    // Ensure login status is fresh before loading orders
+    if (!currentUser) {
+        await checkLoginStatus();
+        if (!currentUser) {
+            window.location.href = '/';
+            return;
+        }
+    }
+
     try {
         const resp = await fetch(`/api/orders?page=${page}&per_page=10`);
         if (resp.status === 401) {
-            // Not logged in - redirect to home
+            currentUser = null;
+            updateNavbar(null);
             window.location.href = '/';
             return;
         }
@@ -922,7 +1244,8 @@ async function loadOrders(page) {
         orderTotalPages = data.pages;
         renderOrders(data.orders, data.total, data.page, data.pages);
     } catch (err) {
-        showToast('加载订单失败', 'error');
+        showToast(getNetworkErrorMessage(err), 'error');
+        console.error('加载订单失败:', err);
     }
 }
 
@@ -1056,7 +1379,8 @@ async function viewOrderDetail(orderId) {
         showDetailModal(modalBody);
 
     } catch (err) {
-        showToast('获取订单详情失败', 'error');
+        showToast(getNetworkErrorMessage(err), 'error');
+        console.error('获取订单详情失败:', err);
     }
 }
 
@@ -1120,7 +1444,8 @@ async function reHumanize(orderId) {
         window.location.href = '/';
 
     } catch (err) {
-        showToast('改写出错', 'error');
+        showToast(getNetworkErrorMessage(err), 'error');
+        console.error('改写出错:', err);
     }
 }
 

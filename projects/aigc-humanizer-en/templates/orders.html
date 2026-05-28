@@ -30,8 +30,8 @@
                 <a href="/#features" class="nav-link">功能</a>
                 <a href="/#pricing" class="nav-link">定价</a>
                 <a href="/#faq" class="nav-link">常见问题</a>
-                <a href="/orders" class="nav-link" id="orders-link">订单历史</a>
-                <span class="nav-user" id="nav-user"></span>
+                <a href="/orders" class="nav-link" id="orders-link" style="display:none;">订单历史</a>
+                <span class="nav-user" id="nav-user" style="display:none;"></span>
                 <button class="btn btn-outline btn-sm" id="login-btn" onclick="showAuthModal('login')">登录</button>
                 <button class="btn btn-outline btn-sm" id="logout-btn" style="display:none;" onclick="logout()">退出</button>
             </div>
@@ -105,9 +105,16 @@
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     {% if not needs_login %}
     <script>
-        // Load orders when page loads (reuse script.js functions)
-        document.addEventListener('DOMContentLoaded', function() {
-            loadOrders(1);
+        // Wait for checkLoginStatus to complete before loading orders
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Wait for the login status check to complete
+            if (loginStatusPromise) {
+                await loginStatusPromise;
+            }
+            // Now currentUser should be set by checkLoginStatus
+            if (currentUser) {
+                loadOrders(1);
+            }
         });
     </script>
     {% endif %}

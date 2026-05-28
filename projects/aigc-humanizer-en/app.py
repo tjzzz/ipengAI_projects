@@ -9,15 +9,27 @@ import re
 import uuid
 import json
 import io
+import logging
 from functools import wraps
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, session, send_file, g
 from flask.sessions import SessionInterface, SessionMixin
 from uuid import uuid4
 import pickle as _pickle
 from dotenv import load_dotenv
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
+
+# Configure logging: structured format for production debugging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 from ai_checker import analyze_text, analyze_by_paragraphs
 from humanize import humanize_text
@@ -69,7 +81,7 @@ class _FileSystemSessionInterface(SessionInterface):
                         data = _pickle.load(f)
                     return _FileSystemSession(data=data, sid=sid)
                 except Exception:
-                    pass
+                    logging.warning("Failed to load session file for sid=%s, creating new session", sid)
         return _FileSystemSession(new=True)
 
     def save_session(self, app, session, response):
@@ -114,8 +126,59 @@ if app.config.get('PAYMENT_ADAPTER') == 'mock' and os.environ.get('FLASK_ENV') =
     )
 
 if app.config.get('PAYMENT_ADAPTER') == 'mock':
-    import logging
     logging.warning("PAYMENT_ADAPTER=mock is enabled. This should only be used for development.")
+
+# Thread pool for background rewrite tasks (replaces raw threading.Thread)
+_rewrite_executor = ThreadPoolExecutor(max_workers=5)
+
+# CSRF Protection (protects HTML form routes, exempts JSON API routes)
+csrf = CSRFProtect(app)
+
+# Rate Limiting (in-memory, resets on restart)
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
+# Allowed upload content types
+ALLOWED_UPLOAD_MIMETYPES = {
+    'text/plain',                     # .txt
+    'text/markdown',                  # .md
+    'application/pdf',                # .pdf
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+}
+
+
+# ========== Startup: Recover processing orders ==========
+
+def _recover_processing_orders():
+    """
+    Scan for orders stuck in 'processing' status and re-trigger rewrite.
+    This handles the case where the server restarted while a rewrite was running.
+    """
+    try:
+        conn = get_connection()
+        try:
+            cursor = conn.execute("SELECT * FROM orders WHERE status = 'processing'")
+            stuck_orders = [dict(row) for row in cursor.fetchall()]
+            for order in stuck_orders:
+                order_id = order['order_id']
+                mode = order.get('mode', 'academic')
+                text = order.get('original_text', '')
+                if not text:
+                    continue
+                logging.warning(f"Recovering stuck processing order: {order_id}")
+                _rewrite_executor.submit(_do_background_rewrite, order_id, text, mode)
+        finally:
+            conn.close()
+    except Exception:
+        logging.exception("Failed to recover processing orders on startup")
+
+
+# Run recovery in background (non-blocking startup)
+_rewrite_executor.submit(lambda: _recover_processing_orders())
 
 
 # ========== Database Connection Helpers ==========
@@ -267,6 +330,20 @@ def login_required(f):
 
 # ========== Helper ==========
 
+def _derive_risk_level(ai_score):
+    """Derive risk level from AI score without running full analysis."""
+    if not ai_score:
+        return "Unknown"
+    if ai_score < 20:
+        return "Safe"
+    elif ai_score < 40:
+        return "Warning"
+    elif ai_score < 60:
+        return "Moderate Risk"
+    else:
+        return "High Risk"
+
+
 def _generate_modification_suggestions(analysis_result, text):
     """Generate suggestions based on AI analysis results."""
     suggestions = []
@@ -345,6 +422,7 @@ def _generate_modification_suggestions(analysis_result, text):
 # ========== Auth Routes ==========
 
 @app.route('/api/register', methods=['POST'])
+@limiter.limit("60 per hour")
 def api_register():
     """Register a new user account."""
     data = request.get_json(silent=True) or {}
@@ -356,9 +434,17 @@ def api_register():
     if not email or '@' not in email or '.' not in email:
         return jsonify({"error": "请输入有效的邮箱地址"}), 400
 
-    # Validate password length
-    if len(password) <= 6:
-        return jsonify({"error": "密码长度必须大于 6 位"}), 400
+    # Validate password length (min 8 chars)
+    if len(password) < 8:
+        return jsonify({"error": "密码长度至少 8 位"}), 400
+
+    # Password complexity: must include uppercase, lowercase, and digit
+    if not re.search(r'[A-Z]', password):
+        return jsonify({"error": "密码必须包含至少一个大写字母"}), 400
+    if not re.search(r'[a-z]', password):
+        return jsonify({"error": "密码必须包含至少一个小写字母"}), 400
+    if not re.search(r'[0-9]', password):
+        return jsonify({"error": "密码必须包含至少一个数字"}), 400
 
     # Validate password confirmation
     if password != confirm_password:
@@ -378,11 +464,13 @@ def api_register():
             "success": True,
             "user": {"id": user['id'], "email": user['email']}
         })
-    except Exception as e:
-        return jsonify({"error": f"注册失败：{str(e)}"}), 500
+    except Exception:
+        logging.exception("注册失败")
+        return jsonify({"error": "注册失败，请稍后重试"}), 500
 
 
 @app.route('/api/login', methods=['POST'])
+@limiter.limit("60 per hour")
 def api_login():
     """Log in an existing user."""
     data = request.get_json(silent=True) or {}
@@ -392,10 +480,38 @@ def api_login():
     if not email or not password:
         return jsonify({"error": "请填写邮箱和密码"}), 400
 
+    # Login lockout: track failed attempts per email
+    lockout = session.get('_login_lockout', {})
+    failures = lockout.get(email, {}).get('count', 0)
+    lock_time = lockout.get(email, {}).get('locked_until')
+    if lock_time:
+        try:
+            if datetime.utcnow() < datetime.fromisoformat(lock_time):
+                return jsonify({"error": "登录尝试过多，请 15 分钟后再试"}), 429
+        except (ValueError, TypeError):
+            pass
+
     conn = get_db()
     user = User.verify_password(conn, email, password)
     if not user:
+        # Increment failure counter
+        failures += 1
+        if failures >= 5:
+            lockout[email] = {
+                'count': failures,
+                'locked_until': (datetime.utcnow() + timedelta(minutes=15)).isoformat()
+            }
+            session['_login_lockout'] = lockout
+            return jsonify({"error": "登录尝试过多，请 15 分钟后再试"}), 429
+        lockout[email] = {'count': failures}
+        session['_login_lockout'] = lockout
         return jsonify({"error": "邮箱或密码错误"}), 401
+
+    # Successful login: clear lockout for this email
+    if email in session.get('_login_lockout', {}):
+        lockout = session['_login_lockout']
+        lockout.pop(email, None)
+        session['_login_lockout'] = lockout
 
     session['user_id'] = user['id']
     return jsonify({
@@ -447,6 +563,7 @@ def orders_page():
 
 
 @app.route('/api/analyze', methods=['POST'])
+@limiter.limit("60 per minute")
 def api_analyze():
     """
     Analyze text for AI content.
@@ -462,6 +579,10 @@ def api_analyze():
     if 'file' in request.files:
         file = request.files['file']
         if file and file.filename:
+            # Validate MIME type
+            if file.content_type and file.content_type not in ALLOWED_UPLOAD_MIMETYPES:
+                return jsonify({"error": f"不支持的文件类型: {file.content_type}"}), 400
+
             ext = os.path.splitext(file.filename)[1].lower()
             if ext not in ['.docx', '.pdf', '.txt', '.md']:
                 return jsonify({"error": "仅支持 .docx、.pdf、.txt、.md 格式"}), 400
@@ -476,7 +597,7 @@ def api_analyze():
             try:
                 os.remove(filepath)
             except OSError:
-                pass
+                logging.warning(f"Failed to remove temp file: {filepath}")
 
     # Check if text was pasted
     if not text:
@@ -503,9 +624,9 @@ def api_analyze():
         return jsonify({
             "error": f"免费检测限制 {MAX_FREE_ANALYSIS_WORDS} 词以内（当前 {word_count} 词）",
             "over_limit": True,
+            "is_paid": True,
             "word_count": word_count,
             "max_free_words": MAX_FREE_ANALYSIS_WORDS,
-            "extracted_text": text,
             "price": round(max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS), 2),
             "original_format": original_format,
             "original_filename": original_filename
@@ -518,7 +639,8 @@ def api_analyze():
         full_analysis = analyze_text(text)
         paragraph_analysis = analyze_by_paragraphs(text)
     except Exception as e:
-        return jsonify({"error": f"分析出错：{str(e)}"}), 500
+        logging.exception("AI analysis failed")
+        return jsonify({"error": "分析出错，请稍后重试"}), 500
 
     # Generate suggestions
     suggestions = _generate_modification_suggestions(full_analysis, text)
@@ -549,6 +671,7 @@ def api_analyze():
 
 
 @app.route('/api/suggestion-detail', methods=['POST'])
+@limiter.limit("10 per minute")
 def api_suggestion_detail():
     """
     Get detailed suggestions for a specific paragraph or section.
@@ -564,7 +687,8 @@ def api_suggestion_detail():
         analysis = analyze_text(paragraph_text)
         suggestions = _generate_modification_suggestions(analysis, paragraph_text)
     except Exception as e:
-        return jsonify({"error": f"分析出错：{str(e)}"}), 500
+        logging.exception("AI analysis failed")
+        return jsonify({"error": "分析出错，请稍后重试"}), 500
 
     return jsonify({
         "success": True,
@@ -575,6 +699,7 @@ def api_suggestion_detail():
 
 
 @app.route('/api/rewrite', methods=['POST'])
+@limiter.limit("30 per minute")
 @login_required
 def api_rewrite():
     """
@@ -615,6 +740,7 @@ def api_rewrite():
 
 
 @app.route('/api/confirm-payment', methods=['POST'])
+@limiter.limit("30 per minute")
 @login_required
 def api_confirm_payment():
     """
@@ -683,7 +809,7 @@ def api_confirm_payment():
                 )
             except Exception:
                 # If saving fails, still return result (non-fatal)
-                pass
+                logging.exception("Failed to save order record, but rewrite result was returned")
 
         # Clean up session
         session.pop('pending_rewrite', None)
@@ -714,8 +840,9 @@ def api_confirm_payment():
             "original_filename": session.get('last_original_filename', None)
         })
 
-    except Exception as e:
-        return jsonify({"error": f"改写出错：{str(e)}"}), 500
+    except Exception:
+        logging.exception("Rewrite failed")
+        return jsonify({"error": "改写出错，请稍后重试"}), 500
 
 
 @app.route('/api/preview-rewrite', methods=['POST'])
@@ -753,13 +880,15 @@ def api_preview_rewrite():
             "note": "此为免费预览，仅展示部分内容。支付后可改写全文。"
         })
 
-    except Exception as e:
-        return jsonify({"error": f"预览出错：{str(e)}"}), 500
+    except Exception:
+        logging.exception("Preview rewrite failed")
+        return jsonify({"error": "预览出错，请稍后重试"}), 500
 
 
 # ========== Payment API Routes ==========
 
 @app.route('/api/create-payment', methods=['POST'])
+@limiter.limit("30 per minute")
 @login_required
 def api_create_payment():
     """
@@ -792,8 +921,9 @@ def api_create_payment():
             conn, user_id, order_id, text, original_format, original_filename,
             word_count, price, mode
         )
-    except Exception as e:
-        return jsonify({"error": f"创建订单失败：{str(e)}"}), 500
+    except Exception:
+        logging.exception("Failed to create payment order")
+        return jsonify({"error": "创建订单失败，请稍后重试"}), 500
 
     # Call payment adapter to create prepay order
     result = payment_adapter.create_prepay_order(
@@ -822,6 +952,7 @@ def api_create_payment():
 
 
 @app.route('/api/payment-status/<order_id>')
+@limiter.limit("20 per minute")
 def api_payment_status(order_id):
     """
     Check payment status for an order.
@@ -829,6 +960,9 @@ def api_payment_status(order_id):
     """
     user_id = session.get('user_id')
     conn = get_db()
+
+    # Expire old pending orders before checking
+    Order.expire_old_orders(conn)
 
     order = Order.get_by_order_id(conn, order_id)
     if not order:
@@ -851,7 +985,7 @@ def api_payment_status(order_id):
                 payment_status = 'paid'
                 status = 'processing'
         except Exception:
-            pass  # Query failed, just return current status
+            logging.warning("Payment query failed, returning current status")
 
     # Build response based on status
     response = {
@@ -864,18 +998,19 @@ def api_payment_status(order_id):
 
     # If completed, include the rewrite result
     if status == 'completed' and order.get('rewritten_text'):
-        original_analysis = analyze_text(order['original_text']) if order.get('original_text') else {}
+        original_score = order.get('original_score', 0) or 0
+        rewritten_score = order.get('rewritten_score', 0) or 0
         response.update({
             "success": True,
             "original": {
                 "text": order['original_text'],
-                "ai_score": round(order.get('original_score', 0), 1),
-                "risk_level": original_analysis.get('risk_level', 'unknown')
+                "ai_score": round(original_score, 1),
+                "risk_level": _derive_risk_level(original_score)
             },
             "rewritten": {
                 "text": order['rewritten_text'],
-                "ai_score": round(order.get('rewritten_score', 0), 1),
-                "risk_level": analyze_text(order['rewritten_text']).get('risk_level', 'unknown') if order['rewritten_text'] else 'unknown'
+                "ai_score": round(rewritten_score, 1),
+                "risk_level": _derive_risk_level(rewritten_score) if order['rewritten_text'] else 'unknown'
             },
             "improvement": round((order.get('original_score', 0) or 0) - (order.get('rewritten_score', 0) or 0), 1),
             "original_format": order.get('original_format', 'txt'),
@@ -919,63 +1054,74 @@ def api_webhook_alipay():
         # Amount mismatch - potential fraud
         return "fail", 200
 
+    # Idempotency: check trade_no hasn't been used for another order
+    if trade_no:
+        existing = conn.execute(
+            "SELECT order_id FROM orders WHERE alipay_trade_no = ? AND order_id != ?",
+            (trade_no, order_id)
+        ).fetchone()
+        if existing:
+            logging.warning(f"Duplicate trade_no {trade_no} attempted for order {order_id}, already used by {existing['order_id']}")
+            return "fail", 200
+
     # Process payment success
     try:
         _process_payment_success(conn, order_id, trade_no)
-    except Exception as e:
+    except Exception:
+        logging.exception(f"Payment processing failed for order {order_id}")
         return "fail", 200
 
     return "success", 200
 
 
+def _do_background_rewrite(order_id: str, text: str, mode: str) -> None:
+    """
+    Execute the actual humanization rewrite for a paid order.
+    Runs in a background thread. Creates its own DB connection.
+    """
+    try:
+        humanized = humanizer_adapter.humanize(text, mode=mode)
+        rewritten_analysis = analyze_text(humanized)
+        original_analysis = analyze_text(text)
+
+        conn = get_connection()
+        try:
+            Order.update_result(
+                conn, order_id, humanized,
+                rewritten_analysis.get('ai_score', 0),
+                original_analysis.get('ai_score', 0)
+            )
+        finally:
+            conn.close()
+    except Exception:
+        logging.exception(f"Background rewrite failed for {order_id}")
+
+
 def _process_payment_success(conn, order_id, trade_no):
     """
     Internal function to handle successful payment.
-    Marks order as paid and triggers rewrite in background.
+    Marks order as paid and triggers rewrite via thread pool.
     """
-    import threading
-
     order = Order.get_by_order_id(conn, order_id)
     if not order:
-        raise ValueError(f"Order {order_id} not found")
+        logging.error(f"Order {order_id} not found during payment processing")
+        return
 
     # Mark as paid
     Order.mark_paid(conn, order_id, trade_no, datetime.utcnow().isoformat())
 
-    # Read mode from DB — cannot access Flask session in background thread
+    # Read mode from DB
     mode = order.get('mode', 'academic')
+    text = order['original_text']
 
-    # Trigger rewrite in background thread (don't block the webhook response)
-    def do_rewrite():
-        try:
-            text = order['original_text']
-            humanized = humanizer_adapter.humanize(text, mode=mode)
-            rewritten_analysis = analyze_text(humanized)
-            original_analysis = analyze_text(text)
-
-            # Update order with result
-            conn2 = get_connection()
-            try:
-                Order.update_result(
-                    conn2, order_id, humanized,
-                    rewritten_analysis.get('ai_score', 0),
-                    original_analysis.get('ai_score', 0)
-                )
-            finally:
-                conn2.close()
-        except Exception as e:
-            import logging
-            logging.exception(f"Background rewrite failed for {order_id}")
-
-    # Start background thread
-    thread = threading.Thread(target=do_rewrite)
-    thread.daemon = True
-    thread.start()
+    # Submit rewrite to thread pool (don't block the webhook response)
+    _rewrite_executor.submit(_do_background_rewrite, order_id, text, mode)
 
 
 # ========== Test/Debug API (only available in mock mode) ==========
 
 @app.route('/api/test/mock-payment/<order_id>', methods=['POST'])
+@limiter.limit("3 per minute")
 def api_test_mock_payment(order_id):
     """
     Simulate a successful payment for testing purposes.
@@ -997,8 +1143,9 @@ def api_test_mock_payment(order_id):
     try:
         _process_payment_success(conn, order_id, trade_no)
         return jsonify({"success": True, "message": "支付模拟成功，正在后台改写...", "order_id": order_id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logging.exception("Mock payment processing failed")
+        return jsonify({"error": "支付处理失败，请稍后重试"}), 500
 
 
 # ========== Download API ==========
@@ -1042,6 +1189,7 @@ def api_download(order_id):
 # ========== Order API Routes ==========
 
 @app.route('/api/orders')
+@limiter.limit("30 per minute")
 def api_orders():
     """Get user's order list with pagination. Requires login."""
     user_id = session.get('user_id')
@@ -1049,15 +1197,25 @@ def api_orders():
         return jsonify({"error": "未登录"}), 401
 
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 10, type=int)
+    per_page = min(request.args.get('per_page', 10, type=int), 50)
 
     conn = get_db()
     orders, total = Order.get_by_user_id(conn, user_id, page=page, per_page=per_page)
 
+    # Filter out full text content from list (only return metadata)
+    _safe_keys = ['id', 'order_id', 'user_id', 'original_format', 'original_filename',
+                  'word_count', 'price', 'mode', 'original_score', 'rewritten_score',
+                  'status', 'payment_status', 'alipay_trade_no',
+                  'alipay_amount', 'paid_at', 'created_at', 'expires_at']
+    orders_safe = [
+        {k: o[k] for k in _safe_keys if k in o}
+        for o in orders
+    ]
+
     total_pages = max(1, (total + per_page - 1) // per_page)
 
     return jsonify({
-        "orders": orders,
+        "orders": orders_safe,
         "total": total,
         "page": page,
         "pages": total_pages
@@ -1139,8 +1297,71 @@ def api_rehumanize(order_id):
             "improvement": round(original_score - rewritten_analysis['ai_score'], 1)
         })
 
-    except Exception as e:
-        return jsonify({"error": f"改写出错：{str(e)}"}), 500
+    except Exception:
+        logging.exception("Re-humanize failed")
+        return jsonify({"error": "改写出错，请稍后重试"}), 500
+
+
+# ========== Health Check ==========
+
+@app.route('/api/health')
+def api_health():
+    """Health check endpoint for monitoring and load balancers."""
+    return jsonify({"status": "ok", "timestamp": datetime.utcnow().isoformat()})
+
+
+# ========== Security Headers ==========
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '0'  # Deprecated, kept for legacy compat
+    return response
+
+
+# ========== Global Error Handlers ==========
+
+@app.errorhandler(400)
+def handle_400(e):
+    return jsonify({"error": "请求格式错误"}), 400
+
+
+@app.errorhandler(401)
+def handle_401(e):
+    return jsonify({"error": "需要登录", "login_required": True}), 401
+
+
+@app.errorhandler(403)
+def handle_403(e):
+    return jsonify({"error": "无权访问"}), 403
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    return jsonify({"error": "请求的资源不存在"}), 404
+
+
+@app.errorhandler(405)
+def handle_405(e):
+    return jsonify({"error": "请求方法不允许"}), 405
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    logging.exception("Internal server error")
+    return jsonify({"error": "服务器内部错误，请稍后重试"}), 500
+
+
+# ========== CSRF Exemptions for API Routes ==========
+
+# Exempt all /api/ routes from CSRF (they use JSON, not HTML forms)
+for _rule in app.url_map.iter_rules():
+    if _rule.endpoint and _rule.endpoint.startswith('api_'):
+        _view_func = app.view_functions.get(_rule.endpoint)
+        if _view_func and getattr(_view_func, '_csrf_exempt', None) is None:
+            csrf.exempt(_view_func)
 
 
 # ========== Main ==========

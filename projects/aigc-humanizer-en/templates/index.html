@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Humanizer - 降低AI检测率，让论文更自然</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='Inter,sans-serif' font-weight='800' font-size='18' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,6 +17,11 @@
                 <span class="logo-icon">✦</span>
                 <span class="logo-text">AI Humanizer</span>
             </a>
+            <button class="menu-toggle" id="menuToggle" aria-label="菜单" onclick="toggleMenu()">
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+            </button>
             <div class="nav-links">
                 <a href="#features" class="nav-link">功能</a>
                 <a href="#pricing" class="nav-link">定价</a>
@@ -23,9 +29,9 @@
                 <!-- Auth-dependent elements -->
                 <a href="/orders" class="nav-link" id="orders-link" style="display:none;">订单历史</a>
                 <span class="nav-user" id="nav-user" style="display:none;"></span>
-                <button class="btn btn-outline btn-sm" id="login-btn" onclick="showAuthModal('login')">登录</button>
-                <button class="btn btn-outline btn-sm" id="logout-btn" style="display:none;" onclick="logout()">退出</button>
-                <button class="btn btn-outline btn-sm" onclick="document.getElementById('upload-area').scrollIntoView({behavior:'smooth'})">开始使用</button>
+                <button class="btn btn-outline btn-sm" id="login-btn" onclick="showAuthModal('login')" aria-label="登录账户">登录</button>
+                <button class="btn btn-outline btn-sm" id="logout-btn" style="display:none;" onclick="logout()" aria-label="退出登录">退出</button>
+                <button class="btn btn-outline btn-sm" onclick="document.getElementById('upload-area').scrollIntoView({behavior:'smooth'})" aria-label="开始使用">开始使用</button>
             </div>
         </div>
     </nav>
@@ -41,8 +47,8 @@
                         让论文更自然
                     </h1>
                     <p class="hero-subtitle">
-                        上传文档或粘贴文字，一键检测 AI 率。精准改写、保留原意，<br>
-                        通过主流检测平台（Turnitin / 知网 / GPTZero）。
+                        上传英文论文或粘贴文字，一键检测 AI 率。精准改写、保留原意，<br>
+                        轻松通过 Turnitin、知网、GPTZero 等主流检测平台。
                     </p>
                     <div class="hero-stats">
                         <div class="stat-item">
@@ -54,7 +60,7 @@
                             <span class="stat-label">无限修改</span>
                         </div>
                         <div class="stat-item">
-                            <span class="stat-number">300词</span>
+                            <span class="stat-number">500词</span>
                             <span class="stat-label">免费检测</span>
                         </div>
                     </div>
@@ -79,12 +85,12 @@
 
                         <!-- Text Paste -->
                         <div class="text-input-area">
-                            <textarea id="text-input" class="text-input" placeholder="直接粘贴你的英文文本到这里...&#10;&#10;支持 50-300 词的免费检测"></textarea>
+                            <textarea id="text-input" class="text-input" placeholder="直接粘贴你的英文文本到这里...&#10;&#10;支持 50-500 词的免费检测"></textarea>
                         </div>
 
                         <!-- Buttons -->
                         <div class="upload-actions">
-                            <button type="submit" class="btn btn-primary btn-lg" id="analyze-btn">
+                            <button type="submit" class="btn btn-primary btn-lg" id="analyze-btn" aria-label="立即检测AI率">
                                 <span class="btn-label">立即检测 AI 率</span>
                                 <svg class="btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <line x1="5" y1="12" x2="19" y2="12"/>
@@ -155,10 +161,10 @@
                 </div>
 
                 <div class="result-actions">
-                    <button class="btn btn-primary" id="rewrite-btn" onclick="showPaymentModal()">
+                    <button class="btn btn-primary" id="rewrite-btn" onclick="showPaymentModal()" aria-label="自动改写降低AI率">
                         <span>✨ 自动改写降低 AI 率</span>
                     </button>
-                    <button class="btn btn-outline" onclick="resetAnalysis()">重新检测</button>
+                    <button class="btn btn-outline" onclick="resetAnalysis()" aria-label="重新检测">重新检测</button>
                 </div>
             </div>
 
@@ -182,7 +188,7 @@
     <!-- ============ PAYMENT MODAL ============ -->
     <div class="modal-overlay" id="payment-modal" style="display:none;">
         <div class="modal">
-            <button class="modal-close" onclick="closePaymentModal()">&times;</button>
+            <button class="modal-close" onclick="closePaymentModal()" aria-label="关闭支付窗口">&times;</button>
             <div class="modal-body">
                 <div class="modal-icon">💎</div>
                 <h3 class="modal-title">改写降 AI 率</h3>
@@ -190,15 +196,6 @@
                     <div class="payment-row">
                         <span>词数</span>
                         <span id="pay-word-count">0 词</span>
-                    </div>
-                    <div class="payment-row">
-                        <span>模式</span>
-                        <span>
-                            <select id="rewrite-mode" class="mode-select">
-                                <option value="academic">学术模式（保留学术语气）</option>
-                                <option value="aggressive">深度模式（最大程度降 AI）</option>
-                            </select>
-                        </span>
                     </div>
                     <div class="payment-row total">
                         <span>费用</span>
@@ -228,10 +225,41 @@
                     </div>
                 </div>
 
-                <p class="payment-note">💡 支付后 7 天内可无限次修改同一订单，不达标可退款</p>
+                <p class="payment-note">💡 学术改写模式 · 支付后 7 天内可无限次修改同一订单，不达标可退款</p>
+
+                <!-- QR Payment section (shown for over-limit QR scan flow) -->
+                <div id="payment-qr-section" style="display:none;">
+                    <div class="payment-qr-layout">
+                        <div class="payment-qr-info">
+                            <div class="qr-price-label">支付金额</div>
+                            <div class="qr-price-value" id="qr-pay-price">¥0.00</div>
+                            <div class="qr-benefits">
+                                ✅ 全文 AI 检测 + 段落级分析<br>
+                                ✅ AI 降率改写 + 7 天无限修改<br>
+                                ✅ 不达标退款保障
+                            </div>
+                        </div>
+                        <div class="payment-qr-code">
+                            <div class="qr-code-label">使用支付宝扫码</div>
+                            <div id="qrcode-container" class="qr-code-box"></div>
+                            <div class="qr-code-hint">支付宝</div>
+                        </div>
+                    </div>
+                    <div id="payment-qr-status" class="payment-qr-status">
+                        <span id="poll-status">⏳ 等待支付中...</span>
+                        <span id="poll-timer" class="payment-timer"></span>
+                    </div>
+                    <div id="mock-payment-section" class="mock-payment-section">
+                        <button id="mock-pay-btn" class="btn btn-secondary mock-pay-btn">
+                            🧪 模拟支付成功（测试用）
+                        </button>
+                        <p class="mock-pay-note">仅开发测试可见</p>
+                    </div>
+                    <hr class="payment-separator">
+                </div>
 
                 <div class="payment-buttons">
-                    <button class="btn btn-primary btn-lg btn-full" id="pay-btn" onclick="confirmPayment()">
+                    <button class="btn btn-primary btn-lg btn-full" id="pay-btn" onclick="confirmPayment()" aria-label="确认支付">
                         💳 确认支付 ¥<span id="pay-btn-price">0.00</span>
                     </button>
                 </div>
@@ -242,7 +270,7 @@
     <!-- ============ AUTH MODAL ============ -->
     <div class="modal-overlay" id="auth-modal" style="display:none;">
         <div class="modal auth-modal">
-            <button class="modal-close" onclick="closeAuthModal()">&times;</button>
+            <button class="modal-close" onclick="closeAuthModal()" aria-label="关闭登录窗口">&times;</button>
             <div class="modal-body">
                 <div class="modal-icon">👤</div>
                 <h3 class="modal-title">账户</h3>
@@ -301,9 +329,21 @@
                             <span class="score-badge improved" id="new-score-badge">0%</span>
                             <span class="score-risk" id="new-risk"></span>
                             <span class="improvement-badge" id="improvement-badge">↓ 0%</span>
+                            <label class="diff-toggle" title="显示改写差异">
+                                <input type="checkbox" id="diff-toggle-checkbox" onchange="toggleDiffView()">
+                                差异
+                            </label>
                         </div>
                     </div>
                     <div class="comparison-text" id="rewrite-new-text"></div>
+                    <div class="diff-legend" id="diff-legend" style="display:none;">
+                        <span class="diff-legend-item">
+                            <span class="diff-legend-dot added"></span> 新增内容
+                        </span>
+                        <span class="diff-legend-item">
+                            <span class="diff-legend-dot deleted"></span> 删除内容
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -355,7 +395,7 @@
                     <h4 class="pricing-name">检测版</h4>
                     <div class="pricing-price"><span class="price">¥0</span></div>
                     <ul class="pricing-features">
-                        <li>✓ 50-300 词 AI 检测</li>
+                        <li>✓ 50-500 词 AI 检测</li>
                         <li>✓ 段落级分析</li>
                         <li>✓ 修改建议生成</li>
                         <li>✓ 改写效果预览</li>
@@ -367,7 +407,7 @@
                 <div class="pricing-card featured">
                     <div class="pricing-badge popular">推荐</div>
                     <h4 class="pricing-name">改写版</h4>
-                    <div class="pricing-price"><span class="price">¥7</span><span class="per"> /1000词</span></div>
+                    <div class="pricing-price"><span class="price">¥14.9</span><span class="per"> /1000词</span></div>
                     <ul class="pricing-features">
                         <li>✓ 无限字数 AI 检测</li>
                         <li>✓ 段落级分析</li>
@@ -376,21 +416,21 @@
                         <li>✓ 7 天无限次修改</li>
                         <li>✓ 不达标退款保障</li>
                     </ul>
-                    <button class="btn btn-primary btn-full" onclick="scrollToUpload()">开始使用</button>
+                    <button class="btn btn-primary btn-full" onclick="scrollToUpload()">立即使用</button>
                 </div>
                 <div class="pricing-card">
-                    <div class="pricing-badge">超值</div>
-                    <h4 class="pricing-name">套餐包</h4>
+                    <div class="pricing-badge">即将上线</div>
+                    <h4 class="pricing-name">流量包</h4>
                     <div class="pricing-price"><span class="price">¥49</span><span class="per"> /月</span></div>
                     <ul class="pricing-features">
                         <li>✓ 无限次 AI 检测</li>
                         <li>✓ 段落级详细分析</li>
                         <li>✓ 优先处理通道</li>
-                        <li>✓ 月度 50000 词改写额度</li>
+                        <li>✓ 月度 5000 词改写额度</li>
                         <li>✓ 7 天无限修改</li>
-                        <li>✓ 专属客服支持</li>
+                        <li class="disabled">✗ 暂未开放</li>
                     </ul>
-                    <button class="btn btn-outline btn-full" onclick="scrollToUpload()">联系购买</button>
+                    <button class="btn btn-outline btn-full" disabled style="opacity:0.5;cursor:not-allowed;">即将开放</button>
                 </div>
             </div>
         </div>
@@ -480,11 +520,33 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2026 AI Humanizer. All rights reserved.</p>
+                <p>&copy; <span id="copyright-year">2026</span> AI Humanizer. All rights reserved.</p>
             </div>
         </div>
     </footer>
 
+    <!-- QR Code rendering library (with CDN fallback) -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"
+        onerror="console.warn('QR CDN failed to load');document.getElementById('qrcode-container')&&(document.getElementById('qrcode-container').innerHTML='<a href=\'#\' style=\'color:#4f46e5;font-size:0.85rem;\'>二维码加载失败，请刷新重试</a>');"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+<script>
+// Dynamic copyright year
+document.getElementById('copyright-year').textContent = new Date().getFullYear();
+
+function toggleMenu() {
+    const navLinks = document.querySelector('.nav-links');
+    const toggle = document.getElementById('menuToggle');
+    navLinks.classList.toggle('active');
+    toggle.classList.toggle('open');
+}
+
+// Close menu when a nav link is clicked
+document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', () => {
+        document.querySelector('.nav-links').classList.remove('active');
+        document.getElementById('menuToggle').classList.remove('open');
+    });
+});
+</script>
 </body>
 </html>

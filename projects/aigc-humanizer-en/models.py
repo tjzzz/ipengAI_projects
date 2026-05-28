@@ -90,14 +90,14 @@ class Order:
 
     @classmethod
     def init_table(cls, conn):
-        """Create the orders table if it does not exist."""
+        """Create the orders table if it does not exist. Add payment columns if missing."""
         conn.execute("""
             CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 order_id TEXT UNIQUE NOT NULL,
                 original_text TEXT NOT NULL,
-                rewritten_text TEXT NOT NULL,
+                rewritten_text TEXT,
                 original_format TEXT DEFAULT 'txt',
                 original_filename TEXT,
                 word_count INTEGER,
@@ -105,12 +105,32 @@ class Order:
                 mode TEXT DEFAULT 'academic',
                 original_score REAL,
                 rewritten_score REAL,
-                status TEXT DEFAULT 'completed',
+                status TEXT DEFAULT 'pending',
+                payment_status TEXT DEFAULT 'pending',
+                alipay_trade_no TEXT,
+                alipay_amount REAL,
+                alipay_qr_code TEXT,
+                paid_at TEXT,
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
+        conn.commit()
+
+        # Add payment columns to existing table (backward compatibility)
+        cursor = conn.execute("PRAGMA table_info(orders)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'payment_status' not in columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT 'pending'")
+        if 'alipay_trade_no' not in columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN alipay_trade_no TEXT")
+        if 'alipay_amount' not in columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN alipay_amount REAL")
+        if 'alipay_qr_code' not in columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN alipay_qr_code TEXT")
+        if 'paid_at' not in columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN paid_at TEXT")
         conn.commit()
 
     @classmethod
@@ -173,3 +193,93 @@ class Order:
         cursor = conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+    # ========== Payment-related methods ==========
+
+    @classmethod
+    def create_payment_record(cls, conn, user_id, order_id, original_text,
+                               original_format, original_filename, word_count, price, mode):
+        """Create a pending payment order (status='pending', payment_status='pending')."""
+        created_at = datetime.utcnow().isoformat()
+        expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat()
+        conn.execute(
+            """INSERT INTO orders
+               (user_id, order_id, original_text, rewritten_text,
+                original_format, original_filename, word_count, price, mode,
+                original_score, rewritten_score, status, payment_status,
+                alipay_amount, created_at, expires_at)
+               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, 'pending', 'pending', ?, ?, ?)""",
+            (user_id, order_id, original_text, original_format, original_filename,
+             word_count, price, mode, price, created_at, expires_at)
+        )
+        conn.commit()
+        return cls.get_by_order_id(conn, order_id)
+
+    @classmethod
+    def save_qr_code(cls, conn, order_id, qr_code):
+        """Save the Alipay QR code string for an order."""
+        conn.execute(
+            "UPDATE orders SET alipay_qr_code = ? WHERE order_id = ?",
+            (qr_code, order_id)
+        )
+        conn.commit()
+
+    @classmethod
+    def mark_paid(cls, conn, order_id, alipay_trade_no, paid_at):
+        """Mark order as paid after Alipay notification."""
+        conn.execute(
+            """UPDATE orders 
+               SET payment_status = 'paid', 
+                   alipay_trade_no = ?, 
+                   paid_at = ?, 
+                   status = 'processing'
+               WHERE order_id = ?""",
+            (alipay_trade_no, paid_at, order_id)
+        )
+        conn.commit()
+
+    @classmethod
+    def update_result(cls, conn, order_id, rewritten_text, rewritten_score, original_score=None):
+        """Update order with rewrite result (called after humanization completes)."""
+        if original_score is not None:
+            conn.execute(
+                """UPDATE orders 
+                   SET rewritten_text = ?, 
+                       rewritten_score = ?, 
+                       original_score = ?,
+                       status = 'completed'
+                   WHERE order_id = ?""",
+                (rewritten_text, rewritten_score, original_score, order_id)
+            )
+        else:
+            conn.execute(
+                """UPDATE orders 
+                   SET rewritten_text = ?, 
+                       rewritten_score = ?, 
+                       status = 'completed'
+                   WHERE order_id = ?""",
+                (rewritten_text, rewritten_score, order_id)
+            )
+        conn.commit()
+
+    @classmethod
+    def get_payment_status(cls, conn, order_id):
+        """Get payment and processing status for an order."""
+        cursor = conn.execute(
+            "SELECT order_id, payment_status, status, paid_at, price, alipay_trade_no FROM orders WHERE order_id = ?",
+            (order_id,)
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    @classmethod
+    def expire_old_orders(cls, conn, max_age_minutes=30):
+        """Mark orders as expired if payment pending for too long."""
+        cutoff = (datetime.utcnow() - timedelta(minutes=max_age_minutes)).isoformat()
+        conn.execute(
+            """UPDATE orders 
+               SET payment_status = 'expired', status = 'expired'
+               WHERE payment_status = 'pending' AND created_at < ?""",
+            (cutoff,)
+        )
+        conn.commit()

@@ -1,8 +1,18 @@
-# WorkBuddy Skills
+# 芃芃工作室
 
-芃芃工作室数据分析工作流所需的 AI Agent 技能包。
+芃芃工作室的工作空间：开发中项目、数据分析技能包、Agent配置与项目代码。
 
-## 技能目录
+## 项目 (projects/)
+
+| 项目 | 说明 | 技术栈 |
+|------|------|--------|
+| [aigc-humanizer-en](./projects/aigc-humanizer-en/) | AI Humanizer — 英文论文降 AI 检测率 Web 应用，支持 Turnitin 风格检测、段落级分析、学术/深度改写、多格式上传下载 | Flask + SQLite |
+| [spider-leads](./projects/spider-leads/) | 小红书需求线索监控平台（Spider-Man Web App），通过 xiaohongshu-mcp 搜索高热帖子、业务匹配、导出 CSV | Flask + xiaohongshu-mcp |
+
+
+
+## 技能 (skills/)
+
 
 | 技能 | 版本 | 说明 |
 |------|------|------|
@@ -10,7 +20,7 @@
 | [turnitin-ai-checker](./skills/turnitin-ai-checker/) | — | Turnitin AI 检测 — 文本分析与 AI 率预测 |
 | [ai-text-humanizer-api](./skills/ai-text-humanizer-api/) | v1.0.0 | 付费 API 降重 — 调用 ai-text-humanizer.com，作为三级降重策略的 L3 手段 |
 
-## 降重策略
+### 降重策略
 
 ```
 L1: turnitin-ai-checker humanize.py（免费）

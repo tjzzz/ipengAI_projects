@@ -285,44 +285,63 @@ def break_structured_lists(text: str) -> str:
     return text
 
 
-def humanize_text(text: str, academic_mode: bool = True) -> str:
-    """
-    Main humanization function.
-    
-    Args:
-        text: The text to humanize
-        academic_mode: If True, preserve academic tone; if False, more casual
-    
-    Returns:
-        Humanized text (deterministic based on input text)
-    """
-    seed = _get_deterministic_seed(text)
-    
+def _humanize_single_paragraph(text: str, academic_mode: bool, seed: int) -> str:
+    """Humanize a single paragraph, preserving its internal structure."""
     # Split into sentences
     sentences = re.split(r'(?<=[.!?])\s+', text)
-    
+
     # Apply transformations
     sentences = vary_sentence_length(sentences, seed)
     text = ' '.join(sentences)
-    
+
     text = replace_formal_phrases(text, seed)
     text = add_contractions(text, seed)
     text = break_structured_lists(text)
-    
+
     if not academic_mode:
         text = add_personal_voice(text, seed)
         text = add_rhetorical_elements(text, seed)
     else:
         # Light personal touches for academic mode
         text = add_rhetorical_elements(text, seed)
-    
+
     text = vary_punctuation(text)
-    
+
     # Clean up any double spaces
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r'\s+([.,;!?])', r'\1', text)
-    
+
     return text.strip()
+
+
+def humanize_text(text: str, academic_mode: bool = True) -> str:
+    """
+    Main humanization function.
+
+    Args:
+        text: The text to humanize
+        academic_mode: If True, preserve academic tone; if False, more casual
+
+    Returns:
+        Humanized text (deterministic based on input text)
+    """
+    seed = _get_deterministic_seed(text)
+
+    # Split into paragraphs first to preserve structure
+    paragraphs = text.split('\n\n')
+    humanized_paragraphs = []
+
+    for i, para in enumerate(paragraphs):
+        para = para.strip()
+        if not para:
+            humanized_paragraphs.append('')
+            continue
+        # Use paragraph-level seed for variety between paragraphs
+        para_seed = seed + i * 7919
+        humanized = _humanize_single_paragraph(para, academic_mode, para_seed)
+        humanized_paragraphs.append(humanized)
+
+    return '\n\n'.join(humanized_paragraphs).strip()
 
 
 def humanize_by_sections(text: str, high_ai_sections: List[Dict] = None) -> str:
