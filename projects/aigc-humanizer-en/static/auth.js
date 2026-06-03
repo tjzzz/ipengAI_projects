@@ -197,13 +197,9 @@ async function handleRegister() {
         return;
     }
 
-    // Check password complexity: must include uppercase, lowercase, and digit
-    if (!/[A-Z]/.test(password)) {
-        errorEl.textContent = '密码必须包含至少一个大写字母';
-        return;
-    }
-    if (!/[a-z]/.test(password)) {
-        errorEl.textContent = '密码必须包含至少一个小写字母';
+    // Check password complexity: must include both letters and digits
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+        errorEl.textContent = '密码必须包含字母和数字';
         return;
     }
     if (!/[0-9]/.test(password)) {

@@ -24,12 +24,8 @@ def api_register():
         return jsonify({"error": "请输入有效的邮箱地址"}), 400
     if len(password) < 6:
         return jsonify({"error": "密码长度至少 6 位"}), 400
-    if not re.search(r'[A-Z]', password):
-        return jsonify({"error": "密码必须包含至少一个大写字母"}), 400
-    if not re.search(r'[a-z]', password):
-        return jsonify({"error": "密码必须包含至少一个小写字母"}), 400
-    if not re.search(r'[0-9]', password):
-        return jsonify({"error": "密码必须包含至少一个数字"}), 400
+    if not re.search(r'[a-zA-Z]', password) or not re.search(r'[0-9]', password):
+        return jsonify({"error": "密码必须包含字母和数字"}), 400
     if password != confirm_password:
         return jsonify({"error": "两次密码输入不一致"}), 400
 
