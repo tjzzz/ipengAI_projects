@@ -50,14 +50,6 @@ class FileSystemSessionInterface(SessionInterface):
             response.delete_cookie(_cookie_name)
             return
 
-        # If session is empty (cleared), delete the file and cookie
-        if not dict(session):
-            path = os.path.join(self.session_dir, session.sid)
-            if os.path.exists(path):
-                os.remove(path)
-            response.delete_cookie(_cookie_name)
-            return
-
         path = os.path.join(self.session_dir, session.sid)
         with open(path, 'wb') as f:
             _pickle.dump(dict(session), f)
