@@ -87,14 +87,47 @@
                 </div>
                 <div class="auth-form" id="auth-form-login">
                     <input type="email" class="auth-input" id="login-email" placeholder="邮箱地址" autocomplete="email">
-                    <input type="password" class="auth-input" id="login-password" placeholder="密码" autocomplete="current-password">
+                    <div class="password-wrapper">
+                        <input type="password" class="auth-input password-input" id="login-password" placeholder="密码" autocomplete="current-password">
+                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('login-password', this)" aria-label="切换密码显示" tabindex="-1">
+                            <svg class="eye-icon eye-open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            <svg class="eye-icon eye-closed" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
+                                <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                        </button>
+                    </div>
                     <div class="auth-error" id="login-error"></div>
                     <button class="btn btn-primary btn-lg btn-full" onclick="handleLogin()">登录</button>
                 </div>
                 <div class="auth-form" id="auth-form-register" style="display:none;">
                     <input type="email" class="auth-input" id="register-email" placeholder="邮箱地址" autocomplete="email">
-                    <input type="password" class="auth-input" id="register-password" placeholder="密码（至少 6 位）" autocomplete="new-password">
-                    <input type="password" class="auth-input" id="register-confirm" placeholder="确认密码" autocomplete="new-password">
+                    <div class="password-wrapper">
+                        <input type="password" class="auth-input password-input" id="register-password" placeholder="密码（至少 6 位）" autocomplete="new-password">
+                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('register-password', this)" aria-label="切换密码显示" tabindex="-1">
+                            <svg class="eye-icon eye-open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            <svg class="eye-icon eye-closed" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
+                                <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="password-wrapper">
+                        <input type="password" class="auth-input password-input" id="register-confirm" placeholder="确认密码" autocomplete="new-password">
+                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('register-confirm', this)" aria-label="切换密码显示" tabindex="-1">
+                            <svg class="eye-icon eye-open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            <svg class="eye-icon eye-closed" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
+                                <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                        </button>
+                    </div>
                     <div class="auth-error" id="register-error"></div>
                     <button class="btn btn-primary btn-lg btn-full" onclick="handleRegister()">注册</button>
                 </div>

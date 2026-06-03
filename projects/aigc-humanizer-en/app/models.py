@@ -6,7 +6,7 @@ SQLite database operations using sqlite3 module.
 
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
 DB_DIR = os.path.join(os.path.dirname(__file__), 'instance')
@@ -53,7 +53,7 @@ class User:
     def create(cls, conn, email, password):
         """Create a new user. Password is hashed via werkzeug.security."""
         password_hash = generate_password_hash(password, method='pbkdf2:sha256')
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(timezone.utc).isoformat()
         cursor = conn.execute(
             "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
             (email, password_hash, created_at)
@@ -138,8 +138,8 @@ class Order:
                original_format, original_filename, word_count, price, mode,
                original_score, rewritten_score):
         """Create a new order record."""
-        created_at = datetime.utcnow().isoformat()
-        expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat()
+        created_at = datetime.now(timezone.utc).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
         conn.execute(
             """INSERT INTO orders
                (user_id, order_id, original_text, rewritten_text,
@@ -187,21 +187,14 @@ class Order:
         )
         conn.commit()
 
-    @classmethod
-    def get_by_session(cls, conn, order_id):
-        """Look up an order by order_id (for unauthenticated session access)."""
-        cursor = conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-
     # ========== Payment-related methods ==========
 
     @classmethod
     def create_payment_record(cls, conn, user_id, order_id, original_text,
                                original_format, original_filename, word_count, price, mode):
         """Create a pending payment order (status='pending', payment_status='pending')."""
-        created_at = datetime.utcnow().isoformat()
-        expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat()
+        created_at = datetime.now(timezone.utc).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
         conn.execute(
             """INSERT INTO orders
                (user_id, order_id, original_text, rewritten_text,
@@ -263,6 +256,15 @@ class Order:
         conn.commit()
 
     @classmethod
+    def mark_failed(cls, conn, order_id):
+        """Mark order as failed when background rewrite encounters an error."""
+        conn.execute(
+            "UPDATE orders SET status = 'failed', payment_status = 'failed' WHERE order_id = ?",
+            (order_id,)
+        )
+        conn.commit()
+
+    @classmethod
     def get_payment_status(cls, conn, order_id):
         """Get payment and processing status for an order."""
         cursor = conn.execute(
@@ -275,7 +277,7 @@ class Order:
     @classmethod
     def expire_old_orders(cls, conn, max_age_minutes=30):
         """Mark orders as expired if payment pending for too long."""
-        cutoff = (datetime.utcnow() - timedelta(minutes=max_age_minutes)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
         conn.execute(
             """UPDATE orders 
                SET payment_status = 'expired', status = 'expired'

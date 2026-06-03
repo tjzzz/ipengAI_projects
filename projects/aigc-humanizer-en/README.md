@@ -18,8 +18,8 @@
 
 | 方案 | 价格 | 说明 |
 |------|------|------|
-| 免费检测 | ¥0 | 50-600 词 AI 检测 + 段落分析 + 修改建议 |
-| 改写付费 | ¥9.9/1000 词 | 无限字数检测 + 全文降 AI 改写 + 7 天无限修改 |
+| 免费检测 | ¥0 | 50-500 词 AI 检测 + 段落分析 + 修改建议 |
+| 改写付费 | ¥14.9/1000 词 | 无限字数检测 + 全文降 AI 改写 + 7 天无限修改 |
 | 套餐包 | ¥99/月 | 50000 词改写额度 + 优先处理（即将上线） |
 
 ## 技术栈
@@ -78,12 +78,26 @@ python3 app.py
 
 ```
 aigc-humanizer-en/
-├── app.py                  # Flask 主应用（18 个 API 路由 + webhook）
-├── ai_checker.py           # AI 文本检测引擎（5 维评分）
-├── humanize.py             # 改写引擎（规则版，由 HumanizerAdapter 包装调用）
-├── humanizer_adapter.py    # 改写适配器接口 + RuleBasedHumanizer + ApiHumanizer
-├── payment_adapter.py      # 支付适配器接口 + MockPaymentAdapter + AlipayPaymentAdapter
-├── models.py               # 数据模型（User, Order，含支付字段和异步改写方法）
+├── app.py                  # Flask 入口点（15 行，委托 app.create_app）
+├── app/                    # 应用核心包
+│   ├── __init__.py         # 应用工厂 create_app()
+│   ├── config.py           # 配置常量（定价、上传类型）
+│   ├── session.py          # 文件系统 Session 实现
+│   ├── extensions.py       # 共享实例（csrf, limiter, adapters）
+│   ├── helpers.py          # 工具函数（DB、文本提取、文件生成、后台任务）
+│   ├── models.py           # 数据模型（User, Order）
+│   ├── humanize.py         # 改写引擎（规则版）
+│   ├── humanizer_adapter.py # 改写适配器（RuleBased + Api）
+│   ├── ai_checker.py       # AI 检测引擎（5 维评分）
+│   ├── payment_adapter.py  # 支付适配器（Mock + Alipay）
+│   └── routes/             # 路由模块
+│       ├── main.py         # 首页、订单页、健康检查
+│       ├── auth.py         # 注册、登录、登出
+│       ├── analysis.py     # AI 检测、建议详情、预览改写
+│       ├── rewrite.py      # 改写订单 + 支付确认
+│       ├── payment.py      # 支付创建、状态查询、Webhook
+│       ├── download.py     # 下载改写结果
+│       └── orders.py       # 订单列表、详情、重新改写
 ├── requirements.txt        # Python 依赖
 ├── .env.example            # 环境变量示例
 ├── instance/               # SQLite 数据库目录（自动创建）
@@ -95,12 +109,11 @@ aigc-humanizer-en/
 │   ├── script.js           # 前端交互（检测/支付QR码/轮询/订单管理）
 │   └── style.css           # 样式
 ├── docs/
-│   ├── ARCHITECTURE.md     # 系统架构文档
-│   ├── PRD_INCREMENTAL.md  # 增量产品需求文档
+│   ├── PRD.md              # 产品需求文档
+│   ├── TECHNICAL_ARCHITECTURE.md  # 系统架构文档
 │   ├── PRODUCT_MANUAL.md   # 产品使用手册
-│   ├── class-diagram.mermaid   # 类图
-│   └── sequence-diagram.mermaid # 时序图
-└── qa.md                   # QA 测试计划
+│   └── SECURITY_REVIEW.md  # 安全审查报告
+└── test/                   # QA 测试文档
 ```
 
 ## API 文档
@@ -118,13 +131,13 @@ aigc-humanizer-en/
 
 | 方法 | 路径 | 说明 | 需登录 |
 |------|------|------|--------|
-| POST | `/api/analyze` | AI 检测（text / file, 免费 ≤600 词） | 否 |
+| POST | `/api/analyze` | AI 检测（text / file, 免费 ≤500 词） | 否 |
 | POST | `/api/rewrite` | 发起改写请求（旧版流程） | 是 |
 | POST | `/api/confirm-payment` | 确认支付并执行改写（旧版流程） | 是 |
 | POST | `/api/preview-rewrite` | 免费预览改写效果（限首段 200 词） | 否 |
 | POST | `/api/suggestion-detail` | 获取段落级修改建议 | 否 |
 | POST | `/api/create-payment` | 创建预支付订单 + 返回 QR 码（新版流程） | 是 |
-| GET | `/api/payment-status/<id>` | 查询支付状态 + 改写结果（新版流程） | 是 |
+| GET | `/api/payment-status/<id>` | 查询支付状态 + 改写结果（新版流程） | 否* |
 | POST | `/api/webhook/alipay` | 支付宝异步通知（无需前端调用） | — |
 | POST | `/api/test/mock-payment/<id>` | 模拟支付成功（仅 Mock 模式） | — |
 
@@ -164,7 +177,7 @@ aigc-humanizer-en/
     ]
   },
   "word_count": 285,
-  "price": 9.9,
+  "price": 14.9,
   "original_format": "txt",
   "original_filename": null
 }
@@ -187,8 +200,8 @@ PaymentAdapter                    HumanizerAdapter
 ### 支付流程（双路径）
 
 ```
-路径A (<600词): /api/rewrite → /api/confirm-payment → 同步改写 → 返回结果
-路径B (>600词): /api/create-payment → QR码扫码 → webhook → 后台线程异步改写 → 轮询展示
+路径A (<500词, 旧版流程): /api/rewrite → /api/confirm-payment → 同步改写 → 返回结果
+路径B (>500词, 新版流程): /api/create-payment → QR码扫码 → webhook → 后台线程异步改写 → 轮询展示
 ```
 
 - 路径A 使用 `Order.create(status=completed)`，改写同步完成
@@ -249,7 +262,7 @@ CREATE TABLE orders (
 ### 添加新支付渠道
 
 ```python
-from payment_adapter import PaymentAdapter
+from app.payment_adapter import PaymentAdapter
 
 class WechatPaymentAdapter(PaymentAdapter):
     def create_payment(self, order_id, amount, description):
@@ -268,22 +281,22 @@ class WechatPaymentAdapter(PaymentAdapter):
         # 验证微信回调
         return True, order_id, trade_no, amount
 
-# 在 payment_adapter.py 的 create_payment_adapter 中注册
-# 然后在 app.py 中配置 PAYMENT_ADAPTER=wechat
+# 在 app/payment_adapter.py 的 create_payment_adapter 中注册
+# 然后在 .env 中配置 PAYMENT_ADAPTER=wechat
 ```
 
 ### 添加新改写引擎
 
 ```python
-from humanizer_adapter import HumanizerAdapter
+from app.humanizer_adapter import HumanizerAdapter
 
 class OpenAIBasedHumanizer(HumanizerAdapter):
     def humanize(self, text: str, mode: str = 'academic') -> str:
         # 调用 OpenAI API 改写
         return rewritten_text
 
-# 在 humanizer_adapter.py 中实现
-# 然后设置环境变量 HUMANIZER_ADAPTER=openai
+# 在 app/humanizer_adapter.py 中实现
+# 然后设置环境变量 HUMANIZER_ADAPTER=api
 ```
 
 ## 常见问题

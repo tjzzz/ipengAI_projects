@@ -1,3 +1,23 @@
+/* ========== CSRF HELPER ========== */
+function _csrfFetch(url, options) {
+    /* Attach X-CSRFToken header to POST/PUT/DELETE requests */
+    if (['POST', 'PUT', 'DELETE'].includes((options?.method || '').toUpperCase())) {
+        const token = document.querySelector('meta[name="csrf-token"]')?.content;
+        if (token) {
+            options = { ...options, headers: { ...options?.headers, 'X-CSRFToken': token } };
+        }
+    }
+    return fetch(url, options);
+}
+
+/* ========== EXTRACTED TEXT (P0-2: on-demand fetch) ========== */
+function _fetchExtractedText() {
+    _csrfFetch('/api/extracted-text', { method: 'GET' })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => { if (data?.text) sessionStorage.setItem('lastExtractedText', data.text); })
+        .catch(() => {});
+}
+
 /* ========== DOM REFS ========== */
 /* Note: These may be null on pages like /orders — guard with null checks */
 const dropZone = document.getElementById('drop-zone');
@@ -42,8 +62,8 @@ function handleFileSelect(file) {
         showToast('仅支持 .docx、.pdf、.txt、.md 格式', 'error');
         return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-        showToast('文件大小不能超过 10MB', 'error');
+    if (file.size > 20 * 1024 * 1024) {
+        showToast('文件大小不能超过 20MB', 'error');
         return;
     }
     uploadedFile = file;
@@ -72,7 +92,7 @@ async function analyzeText() {
         if (uploadedFile) {
             const formData = new FormData();
             formData.append('file', uploadedFile);
-            const resp = await fetch('/api/analyze', { method: 'POST', body: formData });
+            const resp = await _csrfFetch('/api/analyze', { method: 'POST', body: formData });
             const data = await resp.json();
             handleAnalyzeResponse(data);
         } else {
@@ -88,7 +108,7 @@ async function analyzeText() {
                 showToast('文本太短，请提供至少 50 个字符', 'error');
                 return;
             }
-            const resp = await fetch('/api/analyze', {
+            const resp = await _csrfFetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text })
@@ -128,12 +148,9 @@ function handleAnalyzeResponse(data) {
 
     scrollToResults();
 
-    // If uploaded via file, fill extracted text into textarea for later rewrite use
-    if (data.extracted_text) {
-        textInput.value = data.extracted_text;
-        uploadedFile = null;
-        dropZone.classList.remove('has-file');
-        dropZone.querySelector('.drop-text').textContent = '拖拽文档到此处，或 点击选择文件';
+    // If uploaded via file, fetch extracted text on-demand for later rewrite use
+    if (data.has_extracted_text) {
+        _fetchExtractedText();
     }
 }
 
@@ -142,19 +159,13 @@ function showOverLimitUpgrade(data) {
     const section = document.getElementById('result-section');
     section.style.display = 'block';
 
-    // Fill textarea with extracted text so paid flow can use it
-    if (data.extracted_text) {
-        textInput.value = data.extracted_text;
-        uploadedFile = null;
-        dropZone.classList.remove('has-file');
-        dropZone.querySelector('.drop-text').textContent = '拖拽文档到此处，或 点击选择文件';
+    // Fetch extracted text on-demand so paid flow can use it
+    if (data.has_extracted_text) {
+        _fetchExtractedText();
     }
 
     const wordCount = data.word_count;
     const price = data.price || (wordCount / 1000 * 14.9).toFixed(2);
-
-    // Don't destroy score-card — keep the SVG ring structure intact.
-    // Use the existing payment modal instead.
 
     // Clear sub-sections (they're empty in over-limit case, but be safe)
     document.getElementById('sub-scores').innerHTML = '';
@@ -164,19 +175,36 @@ function showOverLimitUpgrade(data) {
 
     scrollToResults();
 
-    // Show payment modal with loading state
-    showPaymentModal();
-    document.getElementById('pay-word-count').textContent = wordCount + ' 词';
-    document.getElementById('pay-price').textContent = '¥' + price;
-    document.getElementById('pay-btn-price').textContent = price;
-    document.getElementById('pay-btn').disabled = true;
-    document.getElementById('pay-btn').innerHTML = '⏳ 正在生成支付订单...';
+    // Store payment info for post-login flow
+    sessionStorage.setItem('pendingPaymentInfo', JSON.stringify({
+        wordCount, price, mode: 'academic'
+    }));
 
-    // Hide the default QR section and mock payment area until order is created
-    document.getElementById('payment-qr-section').style.display = 'none';
+    // Check login first — don't show payment modal if not logged in
+    // Wait for login status check to complete
+    (async () => {
+        if (loginStatusPromise) {
+            await loginStatusPromise;
+        }
 
-    // Call API to create payment order
-    createPaymentOrder(wordCount, price, 'academic');
+        if (!currentUser) {
+            sessionStorage.setItem('pendingPaidAnalysis', 'true');
+            showAuthModal('login');
+            showToast('请先登录，登录后将自动创建订单', 'info');
+            return;
+        }
+
+        // User is logged in, show payment modal directly
+        showPaymentModal();
+        document.getElementById('pay-word-count').textContent = wordCount + ' 词';
+        document.getElementById('pay-price').textContent = '¥' + price;
+        document.getElementById('pay-btn-price').textContent = price;
+        document.getElementById('pay-btn').disabled = true;
+        document.getElementById('pay-btn').innerHTML = '⏳ 正在生成支付订单...';
+        document.getElementById('payment-qr-section').style.display = 'none';
+
+        createPaymentOrder(wordCount, price, 'academic');
+    })();
 }
 
 async function createPaymentOrder(wordCount, price, mode = 'academic') {
@@ -191,11 +219,12 @@ async function createPaymentOrder(wordCount, price, mode = 'academic') {
     const text = getCurrentText();
     if (!text) {
         showToast('没有可分析的文本，请重新上传', 'error');
+        closePaymentModal();
         return;
     }
 
     try {
-        const resp = await fetch('/api/create-payment', {
+        const resp = await _csrfFetch('/api/create-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, mode: mode || 'academic' })
@@ -254,7 +283,7 @@ function renderPaymentQR(order, wordCount, price) {
             newMockBtn.disabled = true;
             newMockBtn.textContent = '处理中...';
             try {
-                const resp = await fetch(`/api/test/mock-payment/${order.order_id}`, { method: 'POST' });
+                const resp = await _csrfFetch(`/api/test/mock-payment/${order.order_id}`, { method: 'POST' });
                 const data = await resp.json();
                 if (data.success) {
                     showToast('支付模拟成功！', 'success');
@@ -327,6 +356,7 @@ function startPaymentPolling(orderId) {
 
             if (data.status === 'completed' && data.rewritten) {
                 clearInterval(pollInterval);
+                closePaymentModal();
                 // Show rewrite result
                 displayRewriteResult(data);
                 showToast('改写完成！', 'success');
@@ -364,8 +394,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const pendingPaid = sessionStorage.getItem('pendingPaidAnalysis');
     if (pendingPaid) {
         sessionStorage.removeItem('pendingPaidAnalysis');
+        const pendingInfo = JSON.parse(sessionStorage.getItem('pendingPaymentInfo') || '{}');
+        sessionStorage.removeItem('pendingPaymentInfo');
+        const wc = pendingInfo.wordCount || 0;
+        const pr = pendingInfo.price || 0;
         setTimeout(() => {
-            createPaymentOrder();
+            showPaymentModal();
+            document.getElementById('pay-word-count').textContent = wc + ' 词';
+            document.getElementById('pay-price').textContent = '¥' + pr;
+            document.getElementById('pay-btn-price').textContent = pr;
+            document.getElementById('pay-btn').disabled = true;
+            document.getElementById('pay-btn').innerHTML = '⏳ 正在生成支付订单...';
+            document.getElementById('payment-qr-section').style.display = 'none';
+            createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
         }, 800);
     }
 });
@@ -543,11 +584,8 @@ function hideLoading() {
 /* ========== AUTH ========== */
 let currentUser = null;
 
-// Check login status on page load
-let loginStatusPromise = null;
-document.addEventListener('DOMContentLoaded', () => {
-    loginStatusPromise = checkLoginStatus();
-});
+// Check login status on page load (eager init to avoid race with orders.html)
+let loginStatusPromise = checkLoginStatus();
 
 async function checkLoginStatus() {
     try {
@@ -604,9 +642,9 @@ function closeAuthModal() {
     document.getElementById('login-error').textContent = '';
     document.getElementById('register-error').textContent = '';
     document.getElementById('register-success').textContent = '';
-    // Return focus to login button
+    // Return focus to login button (only if visible)
     const loginBtn = document.getElementById('login-btn');
-    if (loginBtn) loginBtn.focus();
+    if (loginBtn && loginBtn.style.display !== 'none') loginBtn.focus();
 }
 
 // Close auth modal on overlay click
@@ -645,7 +683,7 @@ async function handleLogin() {
     }
 
     try {
-        const resp = await fetch('/api/login', {
+        const resp = await _csrfFetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
@@ -661,6 +699,26 @@ async function handleLogin() {
         updateNavbar(currentUser);
         closeAuthModal();
         showToast(`欢迎回来，${currentUser.email}`, 'success');
+
+        // Check for pending paid analysis after login
+        const pendingPaid = sessionStorage.getItem('pendingPaidAnalysis');
+        if (pendingPaid) {
+            sessionStorage.removeItem('pendingPaidAnalysis');
+            const pendingInfo = JSON.parse(sessionStorage.getItem('pendingPaymentInfo') || '{}');
+            sessionStorage.removeItem('pendingPaymentInfo');
+            const wc = pendingInfo.wordCount || 0;
+            const pr = pendingInfo.price || 0;
+            setTimeout(() => {
+                showPaymentModal();
+                document.getElementById('pay-word-count').textContent = wc + ' 词';
+                document.getElementById('pay-price').textContent = '¥' + pr;
+                document.getElementById('pay-btn-price').textContent = pr;
+                document.getElementById('pay-btn').disabled = true;
+                document.getElementById('pay-btn').innerHTML = '⏳ 正在生成支付订单...';
+                document.getElementById('payment-qr-section').style.display = 'none';
+                createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
+            }, 500);
+        }
 
         // Clear login fields
         document.getElementById('login-email').value = '';
@@ -691,13 +749,27 @@ async function handleRegister() {
         return;
     }
 
-    if (password.length <= 6) {
-        errorEl.textContent = '密码长度必须大于 6 位';
+    if (password.length < 6) {
+        errorEl.textContent = '密码长度至少 6 位';
+        return;
+    }
+
+    // Check password complexity: must include uppercase, lowercase, and digit
+    if (!/[A-Z]/.test(password)) {
+        errorEl.textContent = '密码必须包含至少一个大写字母';
+        return;
+    }
+    if (!/[a-z]/.test(password)) {
+        errorEl.textContent = '密码必须包含至少一个小写字母';
+        return;
+    }
+    if (!/[0-9]/.test(password)) {
+        errorEl.textContent = '密码必须包含至少一个数字';
         return;
     }
 
     try {
-        const resp = await fetch('/api/register', {
+        const resp = await _csrfFetch('/api/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password, confirm_password: confirm })
@@ -714,6 +786,26 @@ async function handleRegister() {
         closeAuthModal();
         showToast(`注册成功！欢迎，${currentUser.email}`, 'success');
 
+        // Check for pending paid analysis after register
+        const pendingPaid = sessionStorage.getItem('pendingPaidAnalysis');
+        if (pendingPaid) {
+            sessionStorage.removeItem('pendingPaidAnalysis');
+            const pendingInfo = JSON.parse(sessionStorage.getItem('pendingPaymentInfo') || '{}');
+            sessionStorage.removeItem('pendingPaymentInfo');
+            const wc = pendingInfo.wordCount || 0;
+            const pr = pendingInfo.price || 0;
+            setTimeout(() => {
+                showPaymentModal();
+                document.getElementById('pay-word-count').textContent = wc + ' 词';
+                document.getElementById('pay-price').textContent = '¥' + pr;
+                document.getElementById('pay-btn-price').textContent = pr;
+                document.getElementById('pay-btn').disabled = true;
+                document.getElementById('pay-btn').innerHTML = '⏳ 正在生成支付订单...';
+                document.getElementById('payment-qr-section').style.display = 'none';
+                createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
+            }, 500);
+        }
+
         // Clear register fields
         document.getElementById('register-email').value = '';
         document.getElementById('register-password').value = '';
@@ -724,9 +816,24 @@ async function handleRegister() {
     }
 }
 
+/* ========== PASSWORD VISIBILITY TOGGLE ========== */
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    // Toggle eye icons
+    const openIcon = btn.querySelector('.eye-open');
+    const closedIcon = btn.querySelector('.eye-closed');
+    if (openIcon && closedIcon) {
+        openIcon.style.display = isPassword ? 'none' : '';
+        closedIcon.style.display = isPassword ? '' : 'none';
+    }
+}
+
 async function logout() {
     try {
-        await fetch('/api/logout', { method: 'POST' });
+        await _csrfFetch('/api/logout', { method: 'POST' });
         currentUser = null;
         updateNavbar(null);
         showToast('已退出登录', 'info');
@@ -801,7 +908,7 @@ async function previewRewrite() {
     document.getElementById('preview-btn').textContent = '⏳ 正在预览...';
 
     try {
-        const resp = await fetch('/api/preview-rewrite', {
+        const resp = await _csrfFetch('/api/preview-rewrite', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
@@ -857,7 +964,7 @@ async function confirmPayment() {
             return;
         }
 
-        const resp1 = await fetch('/api/rewrite', {
+        const resp1 = await _csrfFetch('/api/rewrite', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, mode: 'academic' })
@@ -881,7 +988,7 @@ async function confirmPayment() {
 
         // Step 2: Generate simulated payment token and confirm
         const paymentToken = 'PAY-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-        const resp2 = await fetch('/api/confirm-payment', {
+        const resp2 = await _csrfFetch('/api/confirm-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ payment_token: paymentToken })
@@ -1026,9 +1133,12 @@ function displayRewriteResult(data) {
     document.getElementById('rewrite-order-id').textContent = `订单号：${data.order_id}`;
 
     // Store latest result for download
+    // Note: PDF originals are downloaded as DOCX (backend auto-converts)
+    let origFormat = data.original_format || sessionStorage.getItem('lastOriginalFormat') || 'txt';
+    if (origFormat === 'pdf') origFormat = 'docx';
     latestResult = {
         orderId: data.order_id,
-        originalFormat: data.original_format || sessionStorage.getItem('lastOriginalFormat') || 'txt',
+        originalFormat: origFormat,
         originalFilename: data.original_filename || sessionStorage.getItem('lastOriginalFilename') || 'humanized'
     };
 
@@ -1274,7 +1384,7 @@ function renderOrders(orders, total, page, pages) {
         const improvementSign = improvement > 0 ? '↓' : '↑';
 
         const createdDate = o.created_at ? new Date(o.created_at).toLocaleDateString('zh-CN') : '';
-        const formatLabel = (o.original_format || 'txt').toUpperCase();
+        const formatLabel = (o.original_format === 'pdf' ? 'DOCX' : (o.original_format || 'txt').toUpperCase());
 
         return `
             <div class="order-card">
@@ -1291,7 +1401,7 @@ function renderOrders(orders, total, page, pages) {
                 </div>
                 <div class="order-actions">
                     <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.order_id}')">查看详情</button>
-                    <button class="btn btn-outline btn-sm" onclick="reDownload('${o.order_id}', '${o.original_format || 'txt'}')">⬇️ 下载</button>
+                    <button class="btn btn-outline btn-sm" onclick="reDownload('${o.order_id}', '${o.original_format === 'pdf' ? 'docx' : (o.original_format || 'txt')}')">⬇️ 下载</button>
                     <button class="btn btn-primary btn-sm" onclick="reHumanize('${o.order_id}')">🔄 再次改写</button>
                 </div>
             </div>
@@ -1354,7 +1464,7 @@ async function viewOrderDetail(orderId) {
             </div>
             <div class="order-detail-row">
                 <span class="order-detail-label">格式</span>
-                <span class="order-detail-value">${(order.original_format || 'txt').toUpperCase()}</span>
+                <span class="order-detail-value">${order.original_format === 'pdf' ? 'DOCX (原PDF)' : (order.original_format || 'txt').toUpperCase()}</span>
             </div>
             <div class="order-detail-row">
                 <span class="order-detail-label">创建时间</span>
@@ -1372,7 +1482,7 @@ async function viewOrderDetail(orderId) {
             <div class="order-detail-text">${escapeHtml(order.rewritten_text || '').slice(0, 500)}${(order.rewritten_text || '').length > 500 ? '...' : ''}</div>
 
             <div class="order-detail-actions">
-                <button class="btn btn-primary btn-full" onclick="closeDetailModal(); reDownload('${order.order_id}', '${order.original_format || 'txt'}')">⬇️ 下载</button>
+                <button class="btn btn-primary btn-full" onclick="closeDetailModal(); reDownload('${order.order_id}', '${order.original_format === 'pdf' ? 'docx' : (order.original_format || 'txt')}')">⬇️ 下载</button>
             </div>
         `;
 
@@ -1425,7 +1535,7 @@ async function reHumanize(orderId) {
     const mode = 'academic'; // Default mode
     try {
         showToast('⏳ 正在重新改写...', 'info');
-        const resp = await fetch(`/api/orders/${orderId}/rehumanize`, {
+        const resp = await _csrfFetch(`/api/orders/${orderId}/rehumanize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mode })

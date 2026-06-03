@@ -721,6 +721,45 @@ body {
 }
 .auth-input::placeholder { color: var(--gray-400); }
 
+/* ========== PASSWORD VISIBILITY TOGGLE ========== */
+.password-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.password-wrapper .password-input {
+    padding-right: 44px;
+}
+.password-toggle {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--gray-400);
+    border-radius: 6px;
+    transition: color 0.2s, background 0.2s;
+    padding: 0;
+}
+.password-toggle:hover {
+    color: var(--gray-600);
+    background: var(--gray-100);
+}
+.password-toggle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+.eye-icon {
+    pointer-events: none;
+}
+
 .auth-error {
     font-size: 0.85rem;
     color: var(--danger);
