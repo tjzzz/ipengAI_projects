@@ -125,6 +125,25 @@ function handleAnalyzeResponse(data) {
     // Store AI score for display
     sessionStorage.setItem('lastAiScore', aiScore);
 
+    // If not logged in, require login before proceeding with rewrite or payment
+    if (!currentUser) {
+        if (price > 0) {
+            // Paid flow: store payment info for after-login resume
+            sessionStorage.setItem('pendingPaidAnalysis', 'true');
+            sessionStorage.setItem('pendingPaymentInfo', JSON.stringify({
+                wordCount: wordCount,
+                price: price,
+                mode: 'academic'
+            }));
+        } else {
+            // Free flow: flag for free rewrite after login
+            sessionStorage.setItem('pendingFreeRewrite', 'true');
+        }
+        showAuthModal('login');
+        showToast('请先登录，登录后将自动完成改写', 'info');
+        return;
+    }
+
     if (price === 0) {
         // Free rewrite: directly call rewrite API without showing modal
         handleFreeRewrite();
