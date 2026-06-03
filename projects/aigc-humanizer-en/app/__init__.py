@@ -5,6 +5,7 @@ Creates and configures the Flask application instance.
 
 import os
 import logging
+import threading
 from datetime import timedelta
 
 from dotenv import load_dotenv
@@ -19,16 +20,15 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-# Project root path (parent of app/)
-_PROJ_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
 
 def create_app():
     """Create and configure the Flask application."""
+    from app.config import PROJ_ROOT
+
     app = Flask(__name__,
-                root_path=_PROJ_ROOT,
-                template_folder=os.path.join(_PROJ_ROOT, 'templates'),
-                static_folder=os.path.join(_PROJ_ROOT, 'static'),
+                root_path=PROJ_ROOT,
+                template_folder=os.path.join(PROJ_ROOT, 'templates'),
+                static_folder=os.path.join(PROJ_ROOT, 'static'),
                 static_url_path='/static')
 
     # ── Secret key ──
@@ -41,14 +41,14 @@ def create_app():
 
     # ── Configuration ──
     app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
-    app.config['UPLOAD_FOLDER'] = os.path.join(_PROJ_ROOT, 'uploads')
+    app.config['UPLOAD_FOLDER'] = os.path.join(PROJ_ROOT, 'uploads')
     app.config['PAYMENT_ADAPTER'] = os.environ.get('PAYMENT_ADAPTER', 'mock')
-    app.config['HUMANIZER_ADAPTER'] = 'rule_based'
+    app.config['HUMANIZER_ADAPTER'] = os.environ.get('HUMANIZER_ADAPTER', 'rule_based')
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2)
 
     # ── Filesystem session ──
     from app.session import FileSystemSessionInterface
-    _session_dir = os.path.join(_PROJ_ROOT, 'instance', 'flask_session')
+    _session_dir = os.path.join(PROJ_ROOT, 'instance', 'flask_session')
     os.makedirs(_session_dir, exist_ok=True)
     app.session_interface = FileSystemSessionInterface(_session_dir)
 
@@ -86,10 +86,10 @@ def create_app():
     csrf.init_app(app)
     limiter.init_app(app)
 
-    # ── Startup: recover stuck processing orders ──
+    # ── Startup: recover stuck processing orders (separate thread, avoid occupying pool worker) ──
     from app.helpers import recover_processing_orders
-    from app.extensions import rewrite_executor
-    rewrite_executor.submit(recover_processing_orders)
+    _recovery_thread = threading.Thread(target=recover_processing_orders, daemon=True)
+    _recovery_thread.start()
 
     # ── Register all blueprints ──
     from app.routes import main_bp, auth_bp, analysis_bp, rewrite_bp, \
@@ -119,6 +119,10 @@ def create_app():
     # ── Global error handlers ──
     @app.errorhandler(400)
     def handle_400(e):
+        # Log the actual error for debugging CSRF issues
+        err_desc = str(e)
+        if 'csrf' in err_desc.lower():
+            logging.warning(f"CSRF validation failed: {err_desc}")
         return jsonify({"error": "请求格式错误"}), 400
 
     @app.errorhandler(401)
@@ -147,11 +151,15 @@ def create_app():
         return jsonify({"error": "服务器内部错误，请稍后重试"}), 500
 
     # ── CSRF Exemptions ──
-    # Only the Alipay webhook needs CSRF exemption (called by Alipay servers, not browsers)
-    # All other API routes are protected by CSRF via X-CSRFToken header from frontend
-    webhook_endpoint = 'payment.api_webhook_alipay'
-    _webhook_func = app.view_functions.get(webhook_endpoint)
-    if _webhook_func:
-        csrf.exempt(_webhook_func)
+    # All API routes receive CSRF protection via X-CSRFToken header from the
+    # frontend (_csrfFetch in common.js). Only the Alipay webhook is exempted
+    # because Alipay's servers cannot send our CSRF token.
+    _csrf_exempt_routes = [
+        'payment.api_webhook_alipay',
+    ]
+    for _route in _csrf_exempt_routes:
+        _func = app.view_functions.get(_route)
+        if _func:
+            csrf.exempt(_func)
 
     return app

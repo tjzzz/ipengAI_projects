@@ -8,8 +8,9 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
+from app.config import PROJ_ROOT
 
-DB_DIR = os.path.join(os.path.dirname(__file__), 'instance')
+DB_DIR = os.path.join(PROJ_ROOT, 'instance')
 DB_PATH = os.path.join(DB_DIR, 'aigc_humanizer.db')
 
 
@@ -219,14 +220,19 @@ class Order:
 
     @classmethod
     def mark_paid(cls, conn, order_id, alipay_trade_no, paid_at):
-        """Mark order as paid after Alipay notification."""
+        """Mark order as paid after Alipay notification.
+
+        The WHERE payment_status = 'pending' guard makes this idempotent:
+        if two callers race (e.g. webhook + polling), the second UPDATE
+        affects zero rows and is a safe no-op.
+        """
         conn.execute(
-            """UPDATE orders 
-               SET payment_status = 'paid', 
-                   alipay_trade_no = ?, 
-                   paid_at = ?, 
+            """UPDATE orders
+               SET payment_status = 'paid',
+                   alipay_trade_no = ?,
+                   paid_at = ?,
                    status = 'processing'
-               WHERE order_id = ?""",
+               WHERE order_id = ? AND payment_status = 'pending'""",
             (alipay_trade_no, paid_at, order_id)
         )
         conn.commit()
@@ -263,16 +269,6 @@ class Order:
             (order_id,)
         )
         conn.commit()
-
-    @classmethod
-    def get_payment_status(cls, conn, order_id):
-        """Get payment and processing status for an order."""
-        cursor = conn.execute(
-            "SELECT order_id, payment_status, status, paid_at, price, alipay_trade_no FROM orders WHERE order_id = ?",
-            (order_id,)
-        )
-        row = cursor.fetchone()
-        return dict(row) if row else None
 
     @classmethod
     def expire_old_orders(cls, conn, max_age_minutes=30):

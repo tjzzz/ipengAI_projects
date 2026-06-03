@@ -9,16 +9,9 @@ from flask import Blueprint, request, jsonify, session
 from app.extensions import limiter
 from app.helpers import get_db, login_required, derive_risk_level, \
     generate_modification_suggestions, extract_text
-from app.config import ALLOWED_UPLOAD_MIMETYPES, PRICE_PER_1000_WORDS, \
-    FREE_WORD_LIMIT, MAX_FREE_ANALYSIS_WORDS
+from app.config import ALLOWED_UPLOAD_MIMETYPES, PRICE_PER_1000_WORDS, FREE_WORD_LIMIT
 
 analysis_bp = Blueprint('analysis', __name__)
-
-
-def _get_app():
-    """Get the Flask app from the current context."""
-    from flask import current_app
-    return current_app
 
 
 @analysis_bp.route('/api/analyze', methods=['POST'])
@@ -33,7 +26,8 @@ def api_analyze():
     filename = None
     original_format = 'txt'
     original_filename = None
-    app = _get_app()
+    from flask import current_app
+    app = current_app
 
     # Check if file was uploaded
     if 'file' in request.files:
@@ -53,6 +47,9 @@ def api_analyze():
             file.save(filepath)
             try:
                 text = extract_text(filepath)
+            except Exception:
+                logging.exception(f"Failed to extract text from {filepath}")
+                return jsonify({"error": "文件解析失败，请确认文件格式正确"}), 400
             finally:
                 try:
                     os.remove(filepath)
@@ -78,23 +75,17 @@ def api_analyze():
 
     word_count = len(text.split())
 
-    # Enforce free word limit
-    if word_count > MAX_FREE_ANALYSIS_WORDS:
-        return jsonify({
-            "error": f"免费检测限制 {MAX_FREE_ANALYSIS_WORDS} 词以内（当前 {word_count} 词）",
-            "over_limit": True,
-            "is_paid": True,
-            "word_count": word_count,
-            "max_free_words": MAX_FREE_ANALYSIS_WORDS,
-            "price": round(max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS), 2),
-            "original_format": original_format,
-            "original_filename": original_filename,
-            "has_extracted_text": original_format != 'txt'
-        }), 413
-
+    # Calculate price: free for up to FREE_WORD_LIMIT words
     is_paid = word_count > FREE_WORD_LIMIT
+    over_limit = word_count > FREE_WORD_LIMIT
+    
+    # Price is 0 for free words, otherwise calculate based on word count
+    if word_count <= FREE_WORD_LIMIT:
+        price = 0
+    else:
+        price = max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS)
 
-    # Run AI detection
+    # Run AI detection (always run, even for over-limit texts)
     from app.ai_checker import analyze_text as run_analysis, analyze_by_paragraphs
     try:
         full_analysis = run_analysis(text)
@@ -105,11 +96,7 @@ def api_analyze():
 
     suggestions = generate_modification_suggestions(full_analysis, text)
 
-    price = max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS)
-
     session['last_text'] = text
-    session['last_word_count'] = word_count
-    session['last_price'] = round(price, 2)
 
     return jsonify({
         "success": True,
@@ -122,6 +109,8 @@ def api_analyze():
         "word_count": word_count,
         "price": round(price, 2),
         "is_paid": is_paid,
+        "over_limit": over_limit,
+        "max_free_words": FREE_WORD_LIMIT,
         "has_extracted_text": original_format != 'txt',
         "original_format": original_format,
         "original_filename": original_filename

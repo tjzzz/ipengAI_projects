@@ -94,10 +94,14 @@ def api_rehumanize(order_id):
     expires_at = order['expires_at']
     try:
         expires_dt = datetime.fromisoformat(expires_at)
+        # Ensure timezone-aware comparison (expires_at is stored as UTC)
+        if expires_dt.tzinfo is None:
+            from datetime import timezone as tz
+            expires_dt = expires_dt.replace(tzinfo=tz.utc)
     except (ValueError, TypeError):
         return jsonify({"error": "订单日期异常"}), 500
 
-    if datetime.now(timezone.utc).replace(tzinfo=None) > expires_dt:
+    if datetime.now(timezone.utc) > expires_dt:
         return jsonify({"error": "订单已过期（超过 7 天），请重新购买"}), 410
 
     try:

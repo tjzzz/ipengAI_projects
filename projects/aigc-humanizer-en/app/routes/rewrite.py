@@ -1,5 +1,5 @@
 """
-Rewrite routes — create rewrite order, confirm payment and execute rewrite.
+Rewrite routes — execute text humanization and save order record.
 """
 
 import uuid
@@ -18,8 +18,13 @@ rewrite_bp = Blueprint('rewrite', __name__)
 def api_rewrite():
     """
     Rewrite text to reduce AI detection score.
-    Simulates payment confirmation. Requires login.
+    Executes the humanization immediately and saves the order record.
+    Requires login.
     """
+    from app.extensions import humanizer_adapter as humanizer
+    from app.ai_checker import analyze_text as run_analysis
+    from app.models import Order
+
     data = request.get_json(silent=True) or {}
     text = data.get('text') or session.get('last_text', '')
     mode = data.get('mode', 'academic')
@@ -29,54 +34,9 @@ def api_rewrite():
 
     word_count = len(text.split())
     price = max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS)
+    price = round(price, 2)
 
     order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
-
-    session['pending_rewrite'] = {
-        'text': text,
-        'mode': mode,
-        'word_count': word_count,
-        'price': round(price, 2),
-        'order_id': order_id
-    }
-
-    return jsonify({
-        "success": True,
-        "order": {
-            "order_id": order_id,
-            "word_count": word_count,
-            "price": round(price, 2),
-            "mode": mode
-        }
-    })
-
-
-@rewrite_bp.route('/api/confirm-payment', methods=['POST'])
-@limiter.limit("30 per minute")
-@login_required
-def api_confirm_payment():
-    """
-    Confirm payment and execute the rewrite.
-    Requires payment_token from the frontend (simulated). Requires login.
-    """
-    from app.extensions import (payment_adapter as adapter,
-                                humanizer_adapter as humanizer)
-    from app.ai_checker import analyze_text as run_analysis
-    from app.models import Order
-
-    pending = session.get('pending_rewrite')
-    if not pending:
-        return jsonify({"error": "没有待处理的改写请求"}), 400
-
-    data = request.get_json(silent=True) or {}
-    payment_token = data.get('payment_token', '')
-
-    if not adapter.verify_payment(payment_token):
-        return jsonify({"error": "支付验证失败，请重新尝试"}), 402
-
-    text = pending['text']
-    mode = pending['mode']
-    order_id = pending['order_id']
 
     try:
         humanized = humanizer.humanize(text, mode=mode)
@@ -84,6 +44,7 @@ def api_confirm_payment():
         original_analysis = run_analysis(text)
         rewritten_analysis = run_analysis(humanized)
 
+        # Build paragraph comparison for frontend display
         original_paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
         rewritten_paragraphs = [p.strip() for p in humanized.split('\n\n') if p.strip()]
 
@@ -99,30 +60,30 @@ def api_confirm_payment():
                     "reduction": round(original_analysis['ai_score'] - rewritten_analysis['ai_score'], 1)
                 })
 
+        # Save order record
         user_id = session.get('user_id')
-        if user_id:
-            original_format = session.get('last_original_format', 'txt')
-            original_filename = session.get('last_original_filename', None)
-            try:
-                conn = get_db()
-                Order.create(
-                    conn,
-                    user_id=user_id,
-                    order_id=order_id,
-                    original_text=text,
-                    rewritten_text=humanized,
-                    original_format=original_format,
-                    original_filename=original_filename,
-                    word_count=pending['word_count'],
-                    price=pending['price'],
-                    mode=mode,
-                    original_score=original_analysis.get('ai_score', 0),
-                    rewritten_score=rewritten_analysis.get('ai_score', 0)
-                )
-            except Exception:
-                logging.exception("Failed to save order record, but rewrite result was returned")
+        original_format = session.get('last_original_format', 'txt')
+        original_filename = session.get('last_original_filename', None)
+        try:
+            conn = get_db()
+            Order.create(
+                conn,
+                user_id=user_id,
+                order_id=order_id,
+                original_text=text,
+                rewritten_text=humanized,
+                original_format=original_format,
+                original_filename=original_filename,
+                word_count=word_count,
+                price=price,
+                mode=mode,
+                original_score=original_analysis.get('ai_score', 0),
+                rewritten_score=rewritten_analysis.get('ai_score', 0)
+            )
+        except Exception:
+            logging.exception("Failed to save order record, but rewrite result was returned")
 
-        session.pop('pending_rewrite', None)
+        # Store in session for unauthenticated download fallback
         session['last_rewritten'] = {
             'original': text,
             'rewritten': humanized,
@@ -146,8 +107,8 @@ def api_confirm_payment():
             },
             "improvement": round(original_analysis['ai_score'] - rewritten_analysis['ai_score'], 1),
             "paragraph_comparison": paragraph_comparison,
-            "original_format": session.get('last_original_format', 'txt'),
-            "original_filename": session.get('last_original_filename', None)
+            "original_format": original_format,
+            "original_filename": original_filename
         })
 
     except Exception:

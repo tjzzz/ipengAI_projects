@@ -47,10 +47,14 @@ class FileSystemSessionInterface(SessionInterface):
     def save_session(self, app, session, response):
         _cookie_name = app.config.get('SESSION_COOKIE_NAME', 'session')
         if not session or not hasattr(session, 'sid'):
-            if session and hasattr(session, 'sid'):
-                path = os.path.join(self.session_dir, session.sid)
-                if os.path.exists(path):
-                    os.remove(path)
+            response.delete_cookie(_cookie_name)
+            return
+
+        # If session is empty (cleared), delete the file and cookie
+        if not dict(session):
+            path = os.path.join(self.session_dir, session.sid)
+            if os.path.exists(path):
+                os.remove(path)
             response.delete_cookie(_cookie_name)
             return
 

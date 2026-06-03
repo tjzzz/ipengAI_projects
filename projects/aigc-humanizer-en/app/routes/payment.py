@@ -14,6 +14,21 @@ from app.config import PRICE_PER_1000_WORDS
 payment_bp = Blueprint('payment', __name__)
 
 
+@payment_bp.route('/api/payment-config', methods=['GET'])
+def api_payment_config():
+    """
+    Get payment configuration info (adapter type).
+    """
+    from flask import current_app
+    
+    adapter_type = current_app.config.get('PAYMENT_ADAPTER', 'mock')
+    
+    return jsonify({
+        "adapter_type": adapter_type,
+        "is_mock": adapter_type == 'mock'
+    })
+
+
 @payment_bp.route('/api/create-payment', methods=['POST'])
 @limiter.limit("30 per minute")
 @login_required
@@ -35,7 +50,10 @@ def api_create_payment():
     price = max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS)
     price = round(price, 2)
 
-    order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
+    # 生成格式: order_YYYYMMDD_随机字符
+    date_str = datetime.now().strftime("%Y%m%d")
+    random_str = uuid.uuid4().hex[:6].lower()
+    order_id = f"order_{date_str}_{random_str}"
 
     original_format = session.get('last_original_format', 'txt')
     original_filename = session.get('last_original_filename', None)
@@ -47,13 +65,16 @@ def api_create_payment():
             conn, user_id, order_id, text, original_format, original_filename,
             word_count, price, mode
         )
+        logging.info(f"[PAYMENT] Order created in DB: {order_id}, user={user_id}, words={word_count}, price={price}")
     except Exception:
         logging.exception("Failed to create payment order")
         return jsonify({"error": "创建订单失败，请稍后重试"}), 500
 
+    logging.info(f"[PAYMENT] Calling adapter.create_prepay_order for {order_id}")
     result = adapter.create_prepay_order(
         order_id, price, f"AI降AI率服务 - {word_count}词"
     )
+    logging.info(f"[PAYMENT] Adapter result for {order_id}: has_error={bool(result.get('error'))}, has_qr={bool(result.get('qr_code'))}")
 
     if result.get('error'):
         logging.error(
@@ -77,13 +98,14 @@ def api_create_payment():
             "price": price,
             "qr_code": qr_code,
             "mode": mode,
-            "expires_in": result.get('expires_in', 1800)
+            "expires_in": result.get('expires_in', 600)
         }
     })
 
 
 @payment_bp.route('/api/payment-status/<order_id>')
 @limiter.limit("20 per minute")
+@login_required
 def api_payment_status(order_id):
     """Check payment status for an order (used by frontend polling)."""
     from app.extensions import payment_adapter as adapter
@@ -95,10 +117,11 @@ def api_payment_status(order_id):
     Order.expire_old_orders(conn)
 
     order = Order.get_by_order_id(conn, order_id)
+    logging.info(f"[POLL] order_id={order_id}, user={user_id}, found={order is not None}")
     if not order:
         return jsonify({"error": "订单不存在"}), 404
 
-    if user_id and order['user_id'] != user_id:
+    if order['user_id'] != user_id:
         return jsonify({"error": "无权访问该订单"}), 403
 
     payment_status = order.get('payment_status', 'pending')
@@ -107,12 +130,20 @@ def api_payment_status(order_id):
     if payment_status == 'pending':
         try:
             query_result = adapter.query_payment(order_id)
+            logging.info(
+                f"Payment query for {order_id}: "
+                f"trade_status={query_result.get('trade_status')}, "
+                f"status={query_result.get('status')}"
+            )
             if query_result.get('status') == 'paid':
-                process_payment_success(conn, order_id, query_result.get('trade_no'))
-                payment_status = 'paid'
-                status = 'processing'
+                trade_no = query_result.get('trade_no') or f"QUERY_{order_id}"
+                process_payment_success(conn, order_id, trade_no)
+                # Refresh order from DB to get updated status
+                order = Order.get_by_order_id(conn, order_id)
+                payment_status = order.get('payment_status', 'paid')
+                status = order.get('status', 'processing')
         except Exception:
-            logging.warning("Payment query failed, returning current status")
+            logging.warning("Payment query failed, returning current status", exc_info=True)
 
     response = {
         "order_id": order_id,

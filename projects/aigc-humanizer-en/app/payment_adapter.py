@@ -8,30 +8,18 @@ import json
 from abc import ABC, abstractmethod
 import os
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+# Retry config for transient HTTP errors (502, 503, 504)
+_MAX_RETRIES = 3
+_RETRY_DELAY = 2  # seconds, doubles each retry
+_RETRYABLE_STATUS = {502, 503, 504}
 
 
 class PaymentAdapter(ABC):
     """Interface for payment gateway adapters."""
-
-    @abstractmethod
-    def create_payment(self, order_id, amount, description):
-        """
-        Create a payment order (legacy method).
-        Returns a dict with payment_url and method info.
-        """
-        pass
-
-    @abstractmethod
-    def verify_payment(self, payment_token):
-        """
-        Verify that a payment was completed successfully (legacy method).
-        Returns True if valid, False otherwise.
-        """
-        pass
-
-    # ========== New methods for real payment integration ==========
 
     def create_prepay_order(self, order_id, amount, description, **kwargs):
         """
@@ -61,14 +49,6 @@ class PaymentAdapter(ABC):
 class MockPaymentAdapter(PaymentAdapter):
     """Mock payment adapter for development/testing — simulates payment flow."""
 
-    def create_payment(self, order_id, amount, description):
-        """Return a simulated payment URL."""
-        return {"payment_url": f"/mock-pay/{order_id}", "method": "mock"}
-
-    def verify_payment(self, payment_token):
-        """Accept any token starting with 'PAY-'."""
-        return bool(payment_token and payment_token.startswith("PAY-"))
-
     def create_prepay_order(self, order_id, amount, description, **kwargs):
         """Simulate a prepay order with a mock QR code."""
         # Generate a mock QR code string (in real Alipay, this would be like:
@@ -79,7 +59,7 @@ class MockPaymentAdapter(PaymentAdapter):
             "order_id": order_id,
             "amount": amount,
             "method": "mock",
-            "expires_in": 1800
+            "expires_in": 600
         }
 
     def verify_notification(self, params, signature=None):
@@ -217,7 +197,7 @@ class AlipayPaymentAdapter(PaymentAdapter):
         import alipay.aop.api.DefaultAlipayClient as _alc
 
         def _patched_do_post(url, query_string=None, headers=None, params=None,
-                             charset='utf-8', timeout=15):
+                             charset='utf-8', timeout=60):
             # Build full URL with query string
             if query_string:
                 url = url + ('&' if '?' in url else '?') + query_string
@@ -227,35 +207,43 @@ class AlipayPaymentAdapter(PaymentAdapter):
             if params:
                 body = urllib.parse.urlencode(params).encode(charset or 'utf-8')
 
-            req = urllib.request.Request(url, data=body, method='POST')
-            if headers:
-                for k, v in headers.items():
-                    req.add_header(k, v)
+            last_exc = None
+            for attempt in range(_MAX_RETRIES):
+                req = urllib.request.Request(url, data=body, method='POST')
+                if headers:
+                    for k, v in headers.items():
+                        req.add_header(k, v)
 
-            try:
-                resp = urllib.request.urlopen(req, timeout=timeout)
-                result = resp.read()
-                # Return raw bytes — the SDK's __parse_response will decode it
-                return result
-            except urllib.request.HTTPError as e:
-                detail = e.read()
-                if isinstance(detail, bytes):
-                    detail = detail.decode('utf-8', errors='replace')
+                try:
+                    resp = urllib.request.urlopen(req, timeout=timeout)
+                    result = resp.read()
+                    return result
+                except urllib.request.HTTPError as e:
+                    detail = e.read()
+                    if isinstance(detail, bytes):
+                        detail = detail.decode('utf-8', errors='replace')
+                    # Retry on transient server errors (502/503/504)
+                    if e.code in _RETRYABLE_STATUS and attempt < _MAX_RETRIES - 1:
+                        delay = _RETRY_DELAY * (2 ** attempt)
+                        logger.warning(
+                            f"Alipay gateway returned HTTP {e.code}, "
+                            f"retrying in {delay}s (attempt {attempt + 1}/{_MAX_RETRIES})"
+                        )
+                        time.sleep(delay)
+                        last_exc = e
+                        continue
+                    raise ResponseException(
+                        f'invalid http status {e.code}, detail body: {detail[:500]}'
+                    )
+
+            # Should not reach here, but just in case
+            if last_exc:
                 raise ResponseException(
-                    f'invalid http status {e.code}, detail body: {detail[:500]}'
+                    f'invalid http status {last_exc.code} after {_MAX_RETRIES} retries'
                 )
 
         # Patch at the module that imported do_post (DefaultAlipayClient)
         _alc.do_post = _patched_do_post
-
-    def create_payment(self, order_id, amount, description):
-        """Legacy method - redirects to create_prepay_order."""
-        result = self.create_prepay_order(order_id, amount, description)
-        return {"payment_url": result.get("qr_code", ""), "method": "alipay"}
-
-    def verify_payment(self, payment_token):
-        """Legacy method - not used for Alipay flow."""
-        return False
 
     def create_prepay_order(self, order_id, amount, description, **kwargs):
         """
@@ -271,7 +259,7 @@ class AlipayPaymentAdapter(PaymentAdapter):
                 "order_id": order_id,
                 "amount": amount,
                 "method": "alipay_mock",
-                "expires_in": 1800
+                "expires_in": 600
             }
 
         try:
@@ -282,7 +270,7 @@ class AlipayPaymentAdapter(PaymentAdapter):
             model.out_trade_no = order_id
             model.total_amount = str(amount)
             model.subject = description or "AI降AI率服务"
-            model.timeout_express = "30m"
+            model.timeout_express = "10m"
             # Pass seller_id (PID) so Alipay knows which account receives the payment
             if self.pid:
                 model.seller_id = self.pid
@@ -325,26 +313,24 @@ class AlipayPaymentAdapter(PaymentAdapter):
                     "order_id": order_id
                 }
 
-            # Check for successful response (code 10000 = success)
-            # The response structure is: {"alipay_trade_precreate_response": {...}, "sign": "..."}
-            alipay_trade_precreate_response = response.get(
-                "alipay_trade_precreate_response", {}
-            )
-            response_code = alipay_trade_precreate_response.get("code")
+            # The SDK's __parse_response returns the INNER content (without
+            # the "alipay_trade_precreate_response" wrapper), so check both.
+            inner = response.get("alipay_trade_precreate_response") or response
+            response_code = inner.get("code")
 
             if response_code == "10000":
                 return {
-                    "qr_code": alipay_trade_precreate_response.get("qr_code"),
+                    "qr_code": inner.get("qr_code"),
                     "order_id": order_id,
                     "amount": amount,
                     "method": "alipay",
-                    "expires_in": 1800,
+                    "expires_in": 600,
                     "raw_response": response
                 }
             else:
-                sub_code = alipay_trade_precreate_response.get("sub_code", "")
-                sub_msg = alipay_trade_precreate_response.get("sub_msg", "")
-                msg = alipay_trade_precreate_response.get("msg", "创建订单失败")
+                sub_code = inner.get("sub_code", "")
+                sub_msg = inner.get("sub_msg", "")
+                msg = inner.get("msg", "创建订单失败")
                 logger.error(
                     f"Alipay precreate failed: code={response_code}, "
                     f"sub_code={sub_code}, msg={msg}, sub_msg={sub_msg}"
@@ -358,7 +344,12 @@ class AlipayPaymentAdapter(PaymentAdapter):
 
         except Exception as e:
             err_msg = str(e)
-            if "can only concatenate str" in err_msg and "bytes" in err_msg:
+            if "504" in err_msg or "502" in err_msg or "503" in err_msg:
+                logger.error(
+                    f"Alipay gateway returned server error after retries: {err_msg[:200]}"
+                )
+                err_msg = "支付宝沙箱服务暂时不可用，请稍后重试（如持续出现请切换到正式环境）"
+            elif "can only concatenate str" in err_msg and "bytes" in err_msg:
                 logger.error(
                     "Alipay SDK Python 3.8 compatibility error: the Alipay gateway returned "
                     "a non-200 HTTP status, and the SDK failed to read the response body. "
@@ -457,11 +448,17 @@ class AlipayPaymentAdapter(PaymentAdapter):
 
             request = AlipayTradeQueryRequest(biz_model=model)
             response_str = self.client.execute(request)
+            # The patched do_post returns raw bytes — decode first
+            if isinstance(response_str, bytes):
+                response_str = response_str.decode("utf-8", errors="replace")
             response = json.loads(response_str)
 
+            # The patched do_post bypasses SDK's __parse_response, so the response
+            # may or may not be wrapped in "alipay_trade_query_response".
+            # Handle both formats (same pattern as create_prepay_order).
             alipay_trade_query_response = response.get(
-                "alipay_trade_query_response", {}
-            )
+                "alipay_trade_query_response"
+            ) or response
             response_code = alipay_trade_query_response.get("code")
 
             if response_code == "10000":

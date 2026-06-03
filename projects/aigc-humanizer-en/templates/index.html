@@ -198,31 +198,13 @@
                         <span>词数</span>
                         <span id="pay-word-count">0 词</span>
                     </div>
+                    <div class="payment-row ai-score-row">
+                        <span>AI 率</span>
+                        <span id="ai-score-display" class="ai-score-value">0%</span>
+                    </div>
                     <div class="payment-row total">
                         <span>费用</span>
                         <span id="pay-price">¥0.00</span>
-                    </div>
-                </div>
-
-                <!-- Free preview -->
-                <div class="preview-section">
-                    <button class="btn btn-outline btn-sm" id="preview-btn" onclick="previewRewrite()">
-                        👁️ 免费预览改写效果
-                    </button>
-                    <div id="preview-result" style="display:none;" class="preview-result">
-                        <div class="preview-comparison">
-                            <div class="preview-original">
-                                <strong>原文：</strong>
-                                <p id="preview-original-text"></p>
-                            </div>
-                            <div class="preview-rewritten">
-                                <strong>改写后：</strong>
-                                <p id="preview-rewritten-text"></p>
-                            </div>
-                        </div>
-                        <div class="preview-scores">
-                            <span>AI 率：<span id="preview-orig-score">0%</span> → <span id="preview-new-score" class="score-improved">0%</span></span>
-                        </div>
                     </div>
                 </div>
 
@@ -244,11 +226,17 @@
                             <div class="qr-code-label">使用支付宝扫码</div>
                             <div id="qrcode-container" class="qr-code-box"></div>
                             <div class="qr-code-hint">支付宝</div>
+                            <div id="qr-expiry-timer" class="qr-expiry-timer">⏱️ 二维码有效期: 30:00</div>
                         </div>
                     </div>
                     <div id="payment-qr-status" class="payment-qr-status">
                         <span id="poll-status">⏳ 等待支付中...</span>
                         <span id="poll-timer" class="payment-timer"></span>
+                    </div>
+                    <div id="qr-refresh-section" class="qr-refresh-section" style="display:none;">
+                        <button id="qr-refresh-btn" class="btn btn-outline btn-sm" onclick="refreshQRCode()">
+                            🔄 刷新二维码
+                        </button>
                     </div>
                     <div id="mock-payment-section" class="mock-payment-section">
                         <button id="mock-pay-btn" class="btn btn-secondary mock-pay-btn">
@@ -259,11 +247,6 @@
                     <hr class="payment-separator">
                 </div>
 
-                <div class="payment-buttons">
-                    <button class="btn btn-primary btn-lg btn-full" id="pay-btn" onclick="confirmPayment()" aria-label="确认支付">
-                        💳 确认支付 ¥<span id="pay-btn-price">0.00</span>
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -522,7 +505,7 @@
                         </svg>
                     </button>
                     <div class="faq-answer">
-                        <p>支持上传 .docx（Word）、.pdf、.txt 和 .md（Markdown）格式文件，同时支持直接粘贴英文文本。单个文件最大 10MB。建议使用 .docx 格式以获得最佳兼容性。</p>
+                        <p>支持上传 .docx（Word）、.pdf、.txt 和 .md（Markdown）格式文件，同时支持直接粘贴英文文本。单个文件最大 20MB。建议使用 .docx 格式以获得最佳兼容性。</p>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -568,7 +551,10 @@
     <!-- QR Code rendering library (with CDN fallback) -->
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"
         onerror="console.warn('QR CDN failed to load');document.getElementById('qrcode-container')&&(document.getElementById('qrcode-container').innerHTML='<a href=\'#\' style=\'color:#4f46e5;font-size:0.85rem;\'>二维码加载失败，请刷新重试</a>');"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='common.js') }}"></script>
+    <script src="{{ url_for('static', filename='auth.js') }}"></script>
+    <script src="{{ url_for('static', filename='payment.js') }}"></script>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 <script>
 // Dynamic copyright year
 document.getElementById('copyright-year').textContent = new Date().getFullYear();

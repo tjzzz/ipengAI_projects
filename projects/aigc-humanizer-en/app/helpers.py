@@ -277,6 +277,7 @@ def process_payment_success(conn, order_id, trade_no):
     """
     Internal function to handle successful payment.
     Marks order as paid and triggers rewrite via thread pool.
+    Idempotent: skips if order is already in processing/completed/failed state.
     """
     from app.models import Order
     from app.extensions import rewrite_executor
@@ -286,7 +287,16 @@ def process_payment_success(conn, order_id, trade_no):
         logging.error(f"Order {order_id} not found during payment processing")
         return
 
-    # Mark as paid
+    # Idempotency check: skip if already processed (prevents race with webhook + polling)
+    current_payment_status = order.get('payment_status', 'pending')
+    if current_payment_status != 'pending':
+        logging.info(
+            f"Order {order_id} already in payment_status={current_payment_status}, "
+            f"skipping duplicate processing"
+        )
+        return
+
+    # Mark as paid (this transitions from 'pending' → 'paid'/'processing')
     from datetime import datetime, timezone
     Order.mark_paid(conn, order_id, trade_no, datetime.now(timezone.utc).isoformat())
 
@@ -302,6 +312,7 @@ def recover_processing_orders():
     """
     Scan for orders stuck in 'processing' status and re-trigger rewrite.
     This handles the case where the server restarted while a rewrite was running.
+    Runs in its own thread (called from create_app).
     """
     try:
         from app.models import get_connection
