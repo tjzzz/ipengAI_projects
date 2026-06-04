@@ -3,16 +3,8 @@
 !.gitignore
 !README.md
 
-# But allow the skills directory itself
-!/skills
-
-# Ignore all subdirs inside skills
-/skills/*
-
-# Whitelist only the 3 tracked skills
-!/skills/data-agent
-!/skills/ai-text-humanizer-api
-!/skills/turnitin-ai-checker
+# Allow aigc-humanizer-en project
+!/aigc-humanizer-en
 
 # Common junk files to exclude everywhere
 .DS_Store
