@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>芃芃而生 Logo V2 — 三方案对比</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 40px 20px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 50px;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #047857, #3B82F6, #7C3AED);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p { color: #64748b; font-size: 14px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 30px;
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+    @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; max-width: 500px; } }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
+      transition: box-shadow 0.3s;
+    }
+    .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1), 0 16px 40px rgba(0,0,0,0.08); }
+    .card-visual {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 360px;
+      background: #ffffff;
+      padding: 20px;
+    }
+    .card-visual.dark { background: #0f172a; }
+    .card-info {
+      padding: 24px;
+      border-top: 1px solid #f1f5f9;
+    }
+    .card-info h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .card-info .subtitle {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+    .card-info .desc {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.7;
+    }
+    .tag {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+      margin-right: 6px;
+      margin-bottom: 4px;
+    }
+    .tag-green { background: #ecfdf5; color: #059669; }
+    .tag-blue { background: #eff6ff; color: #2563eb; }
+    .tag-purple { background: #f5f3ff; color: #7c3aed; }
+
+    /* Full brand preview section */
+    .full-preview {
+      max-width: 1300px;
+      margin: 60px auto 0;
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .full-preview h2 {
+      font-size: 20px;
+      margin-bottom: 30px;
+      color: #475569;
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 40px;
+      padding: 30px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .brand-row:last-child { border-bottom: none; }
+    .brand-label {
+      min-width: 120px;
+      font-weight: 600;
+      font-size: 14px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>芃芃而生 · Logo V2 设计方案</h1>
+  <p>北京芃芃而生信息咨询工作室 — AI赋能 · 数据驱动 · 蓬勃生长</p>
+</div>
+
+<div class="grid">
+
+  <!-- ===== 方案A：双芽芃 ===== -->
+  <div class="card">
+    <div class="card-visual">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 320" width="260" height="300">
+        <defs>
+          <linearGradient id="aG" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="100%" style="stop-color:#34D399"/>
+          </linearGradient>
+          <linearGradient id="aB" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#2563EB"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+          <filter id="aGl">
+            <feGaussianBlur stdDeviation="2.5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <!-- 艹 左芽 -->
+        <path d="M 82,210 C 80,175 84,145 94,108" stroke="url(#aG)" stroke-width="12" fill="none" stroke-linecap="round"/>
+        <circle cx="94" cy="100" r="11" fill="#34D399" filter="url(#aGl)"/>
+        <!-- 艹 右芽 -->
+        <path d="M 198,210 C 200,175 196,145 186,108" stroke="url(#aG)" stroke-width="12" fill="none" stroke-linecap="round"/>
+        <circle cx="186" cy="100" r="11" fill="#34D399" filter="url(#aGl)"/>
+        <!-- 艹 横 -->
+        <rect x="64" y="196" width="152" height="10" rx="5" fill="#10B981"/>
+        <!-- AI弧线 -->
+        <path d="M 103,100 Q 140,74 177,100" stroke="#3B82F6" stroke-width="2" fill="none" opacity="0.45"/>
+        <circle cx="140" cy="84" r="6.5" fill="#3B82F6"/>
+        <!-- 凡 · 横 -->
+        <rect x="54" y="238" width="172" height="10" rx="5" fill="url(#aB)"/>
+        <!-- 凡 · 竖 -->
+        <rect x="135" y="252" width="10" height="76" rx="5" fill="url(#aB)"/>
+        <!-- 凡 · 点 → AI核心 -->
+        <g transform="translate(140,286) rotate(45)">
+          <rect x="-8" y="-8" width="16" height="16" rx="2.5" fill="#3B82F6" filter="url(#aGl)"/>
+        </g>
+        <!-- 凡 · 钩 -->
+        <path d="M 140,304 Q 176,314 204,322" stroke="url(#aB)" stroke-width="10" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="card-info">
+      <h3>方案A：双芽芃</h3>
+      <div class="subtitle">笔画解构 · 神经网络</div>
+      <div class="desc">
+        <span class="tag tag-green">生长</span><span class="tag tag-blue">AI</span><span class="tag tag-purple">数据</span>
+        <p style="margin-top:10px">芃字笔画完全解构：<strong>艹的两芽化为AI节点</strong>，节点间数据弧线连接；凡字的点化为<strong>发光菱形AI核心</strong>。绿色=自然生长，蓝紫=AI智能。五行笔画清晰可辨。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 方案B：方圆芃 ===== -->
+  <div class="card">
+    <div class="card-visual">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 320" width="260" height="300">
+        <defs>
+          <linearGradient id="bG" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#34D399"/>
+            <stop offset="100%" style="stop-color:#047857"/>
+          </linearGradient>
+          <linearGradient id="bB" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#3B82F6"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+          <linearGradient id="bF" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="50%" style="stop-color:#3B82F6"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+          <filter id="bGl">
+            <feGaussianBlur stdDeviation="2.5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <!-- ===== 方案B：方圆芃 · 几何重组 ===== -->
+        <!-- 用圆角几何体块重组芃字：两个向上的"芽柱"+圆点，一横一竖一钩 -->
+        <!-- 远看像一株植物从方块基座中长出 → 隐喻数据根基上AI生长 -->
+
+        <!-- 基座方块（芃的底座 = 数据根基） -->
+        <rect x="60" y="230" width="160" height="60" rx="16" fill="url(#bB)" opacity="0.12"/>
+
+        <!-- 中轴（从基座穿出） -->
+        <rect x="134" y="130" width="12" height="140" rx="6" fill="url(#bB)"/>
+
+        <!-- 基座内的横线 -->
+        <rect x="80" y="252" width="120" height="10" rx="5" fill="url(#bB)"/>
+
+        <!-- AI核心（中轴上的菱形） -->
+        <g transform="translate(140,262) rotate(45)">
+          <rect x="-8" y="-8" width="16" height="16" rx="2.5" fill="#fff" filter="url(#bGl)"/>
+        </g>
+
+        <!-- 左侧芽柱（从基座向上生长） -->
+        <rect x="88" y="140" width="14" height="100" rx="7" fill="url(#bG)"/>
+        <circle cx="95" cy="132" r="12" fill="#34D399" filter="url(#bGl)"/>
+        <circle cx="95" cy="132" r="20" fill="#34D399" opacity="0.1"/>
+
+        <!-- 右侧芽柱（更高 = 蓬勃） -->
+        <rect x="178" y="118" width="14" height="122" rx="7" fill="url(#bG)"/>
+        <circle cx="185" cy="110" r="12" fill="#34D399" filter="url(#bGl)"/>
+        <circle cx="185" cy="110" r="20" fill="#34D399" opacity="0.1"/>
+
+        <!-- 两芽间AI连接 -->
+        <path d="M 107,130 Q 140,95 173,110" stroke="#3B82F6" stroke-width="2" fill="none" opacity="0.35"/>
+        <circle cx="140" cy="106" r="5" fill="#3B82F6"/>
+
+        <!-- 向外散开的微小粒子（生长扩散） -->
+        <circle cx="72" cy="120" r="3" fill="#34D399" opacity="0.3"/>
+        <circle cx="210" cy="100" r="3" fill="#34D399" opacity="0.3"/>
+        <circle cx="75" cy="145" r="2" fill="#3B82F6" opacity="0.25"/>
+        <circle cx="208" cy="130" r="2" fill="#7C3AED" opacity="0.25"/>
+      </svg>
+    </div>
+    <div class="card-info">
+      <h3>方案B：方圆芃</h3>
+      <div class="subtitle">几何重组 · 方块生芽</div>
+      <div class="desc">
+        <span class="tag tag-green">结构</span><span class="tag tag-blue">科技</span><span class="tag tag-purple">现代</span>
+        <p style="margin-top:10px">芃字<strong>几何化重组</strong>：基座方块=数据根基，两根圆角芽柱从中向上生长，中轴贯穿始终。远看像<strong>一株植物从科技方块中破土而出</strong>——完美隐喻"AI赋能，数据根基上蓬勃生长"。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 方案C：一念芃 ===== -->
+  <div class="card">
+    <div class="card-visual">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 320" width="260" height="300">
+        <defs>
+          <linearGradient id="cF" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="35%" style="stop-color:#047857"/>
+            <stop offset="50%" style="stop-color:#3B82F6"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+          <linearGradient id="cStroke" x1="0%" y1="100%" x2="50%" y2="0%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+          <filter id="cGl">
+            <feGaussianBlur stdDeviation="2.5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <!-- ===== 方案C：一念芃 · 一笔成型 ===== -->
+        <!-- 超极简：用一笔连续的渐变线条勾勒出芃的轮廓 -->
+        <!-- 下绿上紫的渐变 = 从自然到AI的转化 -->
+        <!-- 配合三个关键节点标记AI属性 -->
+
+        <!-- 外圈光环 -->
+        <circle cx="140" cy="165" r="130" fill="none" stroke="url(#cStroke)" stroke-width="0.8" opacity="0.1"/>
+
+        <!-- 主体：一笔芃 -->
+        <!-- 从左下起笔 → 左芽 → 横 → 右芽 → 回横 → 丿 → 竖 → 钩 -->
+        <!-- 实际用分段实现，但视觉上是连续的一笔 -->
+
+        <!-- 左芽（绿）-->
+        <path d="M 80,210 C 78,178 82,148 94,112"
+              stroke="#10B981" stroke-width="14" fill="none" stroke-linecap="round"/>
+
+        <!-- 横线（绿→蓝渐变） -->
+        <path d="M 58,196 Q 140,188 222,196"
+              stroke="url(#cF)" stroke-width="11" fill="none" stroke-linecap="round"/>
+
+        <!-- 右芽（蓝） -->
+        <path d="M 200,210 C 202,178 198,148 186,112"
+              stroke="#3B82F6" stroke-width="14" fill="none" stroke-linecap="round"/>
+
+        <!-- 丿（蓝紫） -->
+        <path d="M 50,248 Q 140,236 230,248"
+              stroke="url(#cF)" stroke-width="11" fill="none" stroke-linecap="round"/>
+
+        <!-- 竖（紫） -->
+        <path d="M 140,242 L 140,310"
+              stroke="#7C3AED" stroke-width="11" fill="none" stroke-linecap="round"/>
+
+        <!-- 三个AI节点 -->
+        <circle cx="94" cy="105" r="8" fill="#34D399" filter="url(#cGl)"/>
+        <circle cx="186" cy="105" r="8" fill="#3B82F6" filter="url(#cGl)"/>
+        <circle cx="140" cy="305" r="8" fill="#7C3AED" filter="url(#cGl)"/>
+
+        <!-- 节点间三角连接（暗示AI神经网络） -->
+        <line x1="97" y1="106" x2="137" y2="302" stroke="#3B82F6" stroke-width="0.6" opacity="0.15" stroke-dasharray="3,5"/>
+        <line x1="183" y1="106" x2="143" y2="302" stroke="#7C3AED" stroke-width="0.6" opacity="0.15" stroke-dasharray="3,5"/>
+        <line x1="97" y1="106" x2="183" y2="106" stroke="#3B82F6" stroke-width="0.6" opacity="0.15" stroke-dasharray="3,5"/>
+      </svg>
+    </div>
+    <div class="card-info">
+      <h3>方案C：一念芃</h3>
+      <div class="subtitle">一笔成型 · 三色渐变</div>
+      <div class="desc">
+        <span class="tag tag-green">极简</span><span class="tag tag-blue">连贯</span><span class="tag tag-purple">优雅</span>
+        <p style="margin-top:10px">最极简的版本：<strong>一笔勾出芃的轮廓</strong>，颜色从底部绿色渐变到顶部紫色，象征<strong>从自然生长到AI智能的转化</strong>。三个AI节点形成三角神经网络，微虚线连接。适合追求极简调性的品牌。</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 完整品牌组合预览（基于方案A） -->
+<div class="full-preview">
+  <h2>完整品牌组合预览（基于方案A）</h2>
+
+  <!-- 横版组合 -->
+  <div class="brand-row">
+    <div class="brand-label">横版组合</div>
+    <div>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 120" width="620" height="105">
+        <defs>
+          <linearGradient id="fG" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="100%" style="stop-color:#34D399"/>
+          </linearGradient>
+          <linearGradient id="fB" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#2563EB"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+          <linearGradient id="fF" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="50%" style="stop-color:#3B82F6"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+          <filter id="fGl">
+            <feGaussianBlur stdDeviation="1.5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <!-- Mini logo icon -->
+        <g transform="translate(0,5)">
+          <path d="M 28,72 C 27,58 29,46 34,30" stroke="url(#fG)" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <circle cx="34" cy="26" r="5" fill="#34D399" filter="url(#fGl)"/>
+          <path d="M 68,72 C 69,58 67,46 62,30" stroke="url(#fG)" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <circle cx="62" cy="26" r="5" fill="#34D399" filter="url(#fGl)"/>
+          <rect x="20" y="66" width="56" height="5" rx="2.5" fill="#10B981"/>
+          <path d="M 38,26 Q 48,18 58,26" stroke="#3B82F6" stroke-width="1.2" fill="none" opacity="0.45"/>
+          <circle cx="48" cy="21" r="3" fill="#3B82F6"/>
+          <rect x="14" y="84" width="68" height="5" rx="2.5" fill="url(#fB)"/>
+          <rect x="46" y="90" width="5" height="28" rx="2.5" fill="url(#fB)"/>
+        </g>
+        <!-- Brand text -->
+        <text x="120" y="52" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',sans-serif"
+              font-size="36" font-weight="700" letter-spacing="4" fill="url(#fF)">芃芃而生</text>
+        <text x="122" y="76" font-family="'SF Pro Display','Helvetica Neue','Inter',sans-serif"
+              font-size="12" font-weight="400" letter-spacing="8" fill="#64748B">PENG AI STUDIO</text>
+        <rect x="122" y="86" width="120" height="1.5" rx="0.75" fill="url(#fF)" opacity="0.3"/>
+        <text x="122" y="102" font-family="'PingFang SC','Noto Sans SC',sans-serif"
+              font-size="9" font-weight="300" letter-spacing="2" fill="#94A3B8">AI-Driven Data &amp; Intelligence Solutions</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- 暗色背景 -->
+  <div class="brand-row" style="background:#0f172a; margin: 0 -40px; padding: 30px 40px; border-radius: 8px;">
+    <div class="brand-label" style="color:#94a3b8;">暗色模式</div>
+    <div>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 120" width="620" height="105">
+        <defs>
+          <linearGradient id="dG" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" style="stop-color:#34D399"/>
+            <stop offset="100%" style="stop-color:#6EE7B7"/>
+          </linearGradient>
+          <linearGradient id="dB" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#60A5FA"/>
+            <stop offset="100%" style="stop-color:#A78BFA"/>
+          </linearGradient>
+          <linearGradient id="dF" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#34D399"/>
+            <stop offset="50%" style="stop-color:#60A5FA"/>
+            <stop offset="100%" style="stop-color:#A78BFA"/>
+          </linearGradient>
+          <filter id="dGl">
+            <feGaussianBlur stdDeviation="2" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <g transform="translate(0,5)">
+          <path d="M 28,72 C 27,58 29,46 34,30" stroke="url(#dG)" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <circle cx="34" cy="26" r="5" fill="#6EE7B7" filter="url(#dGl)"/>
+          <path d="M 68,72 C 69,58 67,46 62,30" stroke="url(#dG)" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <circle cx="62" cy="26" r="5" fill="#6EE7B7" filter="url(#dGl)"/>
+          <rect x="20" y="66" width="56" height="5" rx="2.5" fill="#34D399"/>
+          <path d="M 38,26 Q 48,18 58,26" stroke="#60A5FA" stroke-width="1.2" fill="none" opacity="0.5"/>
+          <circle cx="48" cy="21" r="3" fill="#60A5FA"/>
+          <rect x="14" y="84" width="68" height="5" rx="2.5" fill="url(#dB)"/>
+          <rect x="46" y="90" width="5" height="28" rx="2.5" fill="url(#dB)"/>
+        </g>
+        <text x="120" y="52" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',sans-serif"
+              font-size="36" font-weight="700" letter-spacing="4" fill="url(#dF)">芃芃而生</text>
+        <text x="122" y="76" font-family="'SF Pro Display','Helvetica Neue','Inter',sans-serif"
+              font-size="12" font-weight="400" letter-spacing="8" fill="#64748b">PENG AI STUDIO</text>
+        <rect x="122" y="86" width="120" height="1.5" rx="0.75" fill="url(#dF)" opacity="0.35"/>
+        <text x="122" y="102" font-family="'PingFang SC','Noto Sans SC',sans-serif"
+              font-size="9" font-weight="300" letter-spacing="2" fill="#4b5563">AI-Driven Data &amp; Intelligence Solutions</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- 独立图标 -->
+  <div class="brand-row">
+    <div class="brand-label">独立图标</div>
+    <div style="display:flex;gap:40px;align-items:center;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+        <defs>
+          <linearGradient id="iG" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="100%" style="stop-color:#34D399"/>
+          </linearGradient>
+          <linearGradient id="iB" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#2563EB"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+        </defs>
+        <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#iB)" opacity="0.1"/>
+        <path d="M 18,42 C 17,34 19,28 22,20" stroke="url(#iG)" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <circle cx="22" cy="18" r="3" fill="#34D399"/>
+        <path d="M 46,42 C 47,34 45,28 42,20" stroke="url(#iG)" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <circle cx="42" cy="18" r="3" fill="#34D399"/>
+        <rect x="12" y="38" width="40" height="3" rx="1.5" fill="#10B981"/>
+        <path d="M 25,18 Q 32,13 39,18" stroke="#3B82F6" stroke-width="1" fill="none" opacity="0.5"/>
+        <rect x="8" y="46" width="48" height="3" rx="1.5" fill="url(#iB)"/>
+        <rect x="29" y="49" width="3" height="12" rx="1.5" fill="url(#iB)"/>
+      </svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="48" height="48">
+        <defs>
+          <linearGradient id="sG" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" style="stop-color:#047857"/>
+            <stop offset="100%" style="stop-color:#34D399"/>
+          </linearGradient>
+          <linearGradient id="sB" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#2563EB"/>
+            <stop offset="100%" style="stop-color:#7C3AED"/>
+          </linearGradient>
+        </defs>
+        <rect x="2" y="2" width="60" height="60" rx="14" fill="#0f172a"/>
+        <path d="M 18,42 C 17,34 19,28 22,20" stroke="url(#sG)" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <circle cx="22" cy="18" r="3" fill="#6EE7B7"/>
+        <path d="M 46,42 C 47,34 45,28 42,20" stroke="url(#sG)" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <circle cx="42" cy="18" r="3" fill="#6EE7B7"/>
+        <rect x="12" y="38" width="40" height="3" rx="1.5" fill="#34D399"/>
+        <path d="M 25,18 Q 32,13 39,18" stroke="#60A5FA" stroke-width="1" fill="none" opacity="0.5"/>
+        <rect x="8" y="46" width="48" height="3" rx="1.5" fill="url(#sB)"/>
+        <rect x="29" y="49" width="3" height="12" rx="1.5" fill="url(#sB)"/>
+      </svg>
+      <div style="font-size:12px;color:#64748b;line-height:1.8;">
+        圆角方块容器<br/>适配 favicon / app icon<br/>支持明暗两种背景
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="text-align:center; margin-top:40px; color:#94a3b8; font-size:12px;">
+  芃芃而生 · Brand Identity V2 · 2026.06
+</div>
+
+</body>
+</html>

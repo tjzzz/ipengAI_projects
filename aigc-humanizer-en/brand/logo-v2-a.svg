@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="aG" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#047857"/>
+      <stop offset="100%" style="stop-color:#34D399"/>
+    </linearGradient>
+    <linearGradient id="aB" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563EB"/>
+      <stop offset="100%" style="stop-color:#7C3AED"/>
+    </linearGradient>
+    <filter id="aGl">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- ===== 方案A：双芽芃 · 笔画解构 ===== -->
+  <!-- 艹 左芽 -->
+  <path d="M 115,258 C 113,215 117,175 130,130" stroke="url(#aG)" stroke-width="14" fill="none" stroke-linecap="round"/>
+  <circle cx="130" cy="122" r="13" fill="#34D399" filter="url(#aGl)"/>
+  <!-- 艹 右芽 -->
+  <path d="M 285,258 C 287,215 283,175 270,130" stroke="url(#aG)" stroke-width="14" fill="none" stroke-linecap="round"/>
+  <circle cx="270" cy="122" r="13" fill="#34D399" filter="url(#aGl)"/>
+  <!-- 艹 横 -->
+  <rect x="90" y="240" width="220" height="12" rx="6" fill="#10B981"/>
+  <!-- AI弧线连接两芽 -->
+  <path d="M 142,122 Q 200,90 258,122" stroke="#3B82F6" stroke-width="2.5" fill="none" opacity="0.45"/>
+  <circle cx="200" cy="105" r="8" fill="#3B82F6"/>
+  <!-- 凡 · 横 -->
+  <rect x="76" y="290" width="248" height="12" rx="6" fill="url(#aB)"/>
+  <!-- 凡 · 竖 -->
+  <rect x="194" y="306" width="12" height="92" rx="6" fill="url(#aB)"/>
+  <!-- 凡 · 点 → AI核心菱形 -->
+  <g transform="translate(200,342) rotate(45)">
+    <rect x="-10" y="-10" width="20" height="20" rx="3" fill="#3B82F6" filter="url(#aGl)"/>
+  </g>
+  <!-- 凡 · 钩 -->
+  <path d="M 200,366 Q 250,378 285,390" stroke="url(#aB)" stroke-width="12" fill="none" stroke-linecap="round"/>
+</svg>
