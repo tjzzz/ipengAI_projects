@@ -32,7 +32,6 @@
                 <span class="nav-user" id="nav-user" style="display:none;"></span>
                 <button class="btn btn-outline btn-sm" id="login-btn" onclick="showAuthModal('login')" aria-label="登录账户">登录</button>
                 <button class="btn btn-outline btn-sm" id="logout-btn" style="display:none;" onclick="logout()" aria-label="退出登录">退出</button>
-                <button class="btn btn-outline btn-sm" onclick="document.getElementById('upload-area').scrollIntoView({behavior:'smooth'})" aria-label="开始使用">开始使用</button>
             </div>
         </div>
     </nav>
@@ -162,8 +161,8 @@
                 </div>
 
                 <div class="result-actions">
-                    <button class="btn btn-primary" id="rewrite-btn" onclick="showPaymentModal()" aria-label="自动改写降低AI率">
-                        <span>✨ 自动改写降低 AI 率</span>
+                    <button class="btn btn-primary" id="rewrite-btn" aria-label="自动改写降低AI率">
+                        <span id="rewrite-btn-text">✨ 自动改写降低 AI 率</span>
                     </button>
                     <button class="btn btn-outline" onclick="resetAnalysis()" aria-label="重新检测">重新检测</button>
                 </div>
@@ -178,11 +177,6 @@
                 <div class="suggestions-list" id="suggestions-list"></div>
             </div>
 
-            <!-- Paragraph Analysis -->
-            <div class="paragraph-section">
-                <h3 class="section-title">📄 段落级分析</h3>
-                <div class="paragraph-list" id="paragraph-list"></div>
-            </div>
         </div>
     </section>
 
@@ -193,58 +187,52 @@
             <div class="modal-body">
                 <div class="modal-icon">💎</div>
                 <h3 class="modal-title">改写降 AI 率</h3>
-                <div class="payment-details">
-                    <div class="payment-row">
-                        <span>词数</span>
-                        <span id="pay-word-count">0 词</span>
-                    </div>
-                    <div class="payment-row ai-score-row">
-                        <span>AI 率</span>
-                        <span id="ai-score-display" class="ai-score-value">0%</span>
-                    </div>
-                    <div class="payment-row total">
-                        <span>费用</span>
-                        <span id="pay-price">¥0.00</span>
-                    </div>
-                </div>
 
-                <p class="payment-note">💡 学术改写模式 · 支付后 7 天内可无限次修改同一订单，不达标可退款</p>
-
-                <!-- QR Payment section (shown for over-limit QR scan flow) -->
-                <div id="payment-qr-section" style="display:none;">
-                    <div class="payment-qr-layout">
-                        <div class="payment-qr-info">
-                            <div class="qr-price-label">支付金额</div>
-                            <div class="qr-price-value" id="qr-pay-price">¥0.00</div>
-                            <div class="qr-benefits">
-                                ✅ 全文 AI 检测 + 段落级分析<br>
-                                ✅ AI 降率改写 + 7 天无限修改<br>
-                                ✅ 不达标退款保障
+                <!-- Two-column payment layout: left = stats, right = QR -->
+                <div class="payment-split-layout">
+                    <!-- Left column: payment summary -->
+                    <div class="payment-summary">
+                        <div class="payment-details">
+                            <div class="payment-row">
+                                <span>词数</span>
+                                <span id="pay-word-count">0 词</span>
+                            </div>
+                            <div class="payment-row ai-score-row">
+                                <span>AI 率</span>
+                                <span id="ai-score-display" class="ai-score-value">0%</span>
+                            </div>
+                            <div class="payment-row total">
+                                <span>费用</span>
+                                <span id="pay-price">¥0.00</span>
                             </div>
                         </div>
+                        <p class="payment-note">💡 学术改写模式 · 支付后 7 天内可无限次修改，不达标可退款</p>
+                    </div>
+
+                    <!-- Right column: QR code -->
+                    <div id="payment-qr-section" style="display:none;">
                         <div class="payment-qr-code">
                             <div class="qr-code-label">使用支付宝扫码</div>
                             <div id="qrcode-container" class="qr-code-box"></div>
                             <div class="qr-code-hint">支付宝</div>
+                            <div id="payment-qr-status" class="payment-qr-status">
+                                <span id="poll-status">⏳ 等待支付中...</span>
+                                <span id="poll-timer" class="payment-timer"></span>
+                            </div>
                             <div id="qr-expiry-timer" class="qr-expiry-timer">⏱️ 二维码有效期: 30:00</div>
                         </div>
+                        <div id="qr-refresh-section" class="qr-refresh-section" style="display:none;">
+                            <button id="qr-refresh-btn" class="btn btn-outline btn-sm" onclick="refreshQRCode()">
+                                🔄 刷新二维码
+                            </button>
+                        </div>
+                        <div id="mock-payment-section" class="mock-payment-section">
+                            <button id="mock-pay-btn" class="btn btn-secondary mock-pay-btn">
+                                🧪 模拟支付成功（测试用）
+                            </button>
+                            <p class="mock-pay-note">仅开发测试可见</p>
+                        </div>
                     </div>
-                    <div id="payment-qr-status" class="payment-qr-status">
-                        <span id="poll-status">⏳ 等待支付中...</span>
-                        <span id="poll-timer" class="payment-timer"></span>
-                    </div>
-                    <div id="qr-refresh-section" class="qr-refresh-section" style="display:none;">
-                        <button id="qr-refresh-btn" class="btn btn-outline btn-sm" onclick="refreshQRCode()">
-                            🔄 刷新二维码
-                        </button>
-                    </div>
-                    <div id="mock-payment-section" class="mock-payment-section">
-                        <button id="mock-pay-btn" class="btn btn-secondary mock-pay-btn">
-                            🧪 模拟支付成功（测试用）
-                        </button>
-                        <p class="mock-pay-note">仅开发测试可见</p>
-                    </div>
-                    <hr class="payment-separator">
                 </div>
 
             </div>

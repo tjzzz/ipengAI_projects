@@ -1214,6 +1214,26 @@ body {
     font-weight: 500;
 }
 
+/* ========== PAYMENT SPLIT LAYOUT ========== */
+.payment-split-layout {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    justify-content: center;
+    margin-top: 16px;
+}
+
+.payment-summary {
+    flex: 1;
+    min-width: 180px;
+    max-width: 260px;
+}
+
+.payment-split-layout #payment-qr-section {
+    flex: 0 0 auto;
+    min-width: 200px;
+}
+
 /* ========== PAYMENT QR SECTION ========== */
 .payment-qr-layout {
     display: flex;

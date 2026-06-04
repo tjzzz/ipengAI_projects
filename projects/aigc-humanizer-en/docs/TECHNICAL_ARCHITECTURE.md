@@ -452,63 +452,76 @@ flowchart LR
 
 ## 6. 核心流程
 
-### 6.1 新版 QR 码支付流程（>600 词，核心路径）
+### 6.1 渐进式交互流程（核心路径）
 
 ```mermaid
 sequenceDiagram
     participant User as 用户
     participant Browser as 浏览器
     participant App as Flask app.py
+    participant AI as ai_checker.py
     participant PAdapter as PaymentAdapter
     participant Alipay as 支付宝网关
     participant DB as SQLite
     participant Thread as 后台线程
 
-    Note over User, DB: ① 超限检测→创建预支付订单
-    User->>Browser: 上传/粘贴 >600 词文本
+    Note over User, Thread: ① 检测 → 展示结果（零门槛）
+    User->>Browser: 上传文件/粘贴文本
     Browser->>App: POST /api/analyze
-    App-->>Browser: 413 {over_limit, extracted_text, price}
-    Browser->>Browser: 检测到超限，自动跳转支付
+    App->>App: extract_text + 分析
+    App-->>Browser: {analysis, text, word_count, price}
+    Browser->>Browser: 展示完整检测结果（AI率+分析+建议）
+    Note right of Browser: 匿名用户全程可见，无需登录
 
-    Note over User, DB: ② 创建支付 QR 码
-    Browser->>App: POST /api/create-payment {text, mode}
-    App->>DB: Order.create_payment_record(status=pending, rewritten_text=NULL)
-    App->>PAdapter: create_prepay_order(order_id, amount)
-    PAdapter-->>App: {qr_code, order_id, expires_in}
-    App->>DB: Order.save_qr_code(qr_code)
-    App-->>Browser: {order: {order_id, price, qr_code}}
-    Browser->>Browser: 渲染 QR 码 + 开始 3s 轮询
-
-    Note over User, DB: ③ 用户扫码支付
-    User->>Browser: 扫码支付
-    Browser->>Alipay: 支付宝付款
-
-    Note over User, DB: ④ 支付宝异步通知
-    Alipay->>App: POST /api/webhook/alipay (带签名参数)
-    App->>PAdapter: verify_notification(params, sign)
-    PAdapter-->>App: (is_valid=True, order_id, trade_no, amount)
-    App->>DB: Order.mark_paid(order_id, trade_no, paid_at)
-    App->>App: 启动后台改写线程
-    App-->>Alipay: "success" (立即返回)
-
-    Note over Thread, DB: ⑤ 后台异步改写
-    Thread->>App: humanizer.humanize(text)
-    App-->>Thread: humanized_text
-    Thread->>App: analyze_text(humanized)
-    App-->>Thread: {ai_score}
-    Thread->>DB: Order.update_result(rewritten_text, scores)
-
-    Note over User, DB: ⑥ 前端轮询检测完成
-    loop 每3秒轮询
-        Browser->>App: GET /api/payment-status/<id>
-        App->>DB: Order.get_payment_status(order_id)
-        DB-->>App: {status: "processing"}
-        App-->>Browser: {payment_status: "paid", status: "processing"}
+    Note over User, Thread: ② 用户主动点击改写
+    User->>Browser: 点击改写按钮
+    alt 未登录
+        Browser->>Browser: 弹出登录/注册弹窗
+        User->>Browser: 登录/注册
+        Browser->>App: POST /api/login (或 /api/register)
+        App-->>Browser: {user}
     end
-    Browser->>App: GET /api/payment-status/<id>
-    App->>DB: 检测到 status=completed
-    App-->>Browser: {status: "completed", rewritten: {...}}
-    Browser->>Browser: 自动展示改写结果
+
+    alt 免费改写 (price === 0)
+        Browser->>App: POST /api/rewrite {text, mode}
+        App->>App: humanize + analyze
+        App-->>Browser: {original, rewritten, improvement}
+        Browser->>Browser: 展示改写对比结果
+
+    else 付费改写 (price > 0)
+        Note over User, Thread: ③ 创建支付订单 + 二维码即显示
+        Browser->>App: POST /api/create-payment {text, mode}
+        App->>DB: Order.create_payment_record(status=pending)
+        App->>PAdapter: create_prepay_order(order_id, amount)
+        PAdapter-->>App: {qr_code, order_id, expires_in}
+        App->>DB: Order.save_qr_code(qr_code)
+        App-->>Browser: {order: {order_id, price, qr_code}}
+        Browser->>Browser: 立即渲染二维码 + 3s 轮询
+
+        Note over User, Thread: ④ 用户扫码支付
+        User->>Browser: 扫码支付
+        Browser->>Alipay: 支付宝付款
+
+        Note over User, Thread: ⑤ 支付宝异步通知
+        Alipay->>App: POST /api/webhook/alipay
+        App->>PAdapter: verify_notification(params, sign)
+        PAdapter-->>App: (is_valid=True, order_id, trade_no)
+        App->>DB: Order.mark_paid(order_id, trade_no)
+        App->>App: 启动后台改写线程
+        App-->>Alipay: "success"
+
+        Note over Thread, DB: ⑥ 后台异步改写
+        Thread->>App: humanizer.humanize(text)
+        App-->>Thread: humanized_text
+        Thread->>DB: Order.update_result(rewritten_text, scores)
+
+        Note over User, DB: ⑦ 前端轮询检测完成
+        loop 每3秒轮询
+            Browser->>App: GET /api/payment-status/<id>
+            App-->>Browser: {status: "processing" / "completed"}
+        end
+        Browser->>Browser: 自动展示改写对比结果
+    end
 ```
 
 ### 6.2 旧版模态框支付流程（<600 词，兼容路径）
@@ -681,31 +694,30 @@ stateDiagram-v2
     end note
 ```
 
-### 6.6 双支付流程决策
+### 6.6 交互流程决策
 
 ```mermaid
 flowchart TD
-    A[用户发起改写] --> B{词数检查}
-    B -->|≤600 词| C[旧版模态框支付]
-    B -->|>600 词| D[新版 QR 码支付]
-
-    C --> C1[POST /api/rewrite]
-    C1 --> C2[生成 order_id + 价格]
-    C2 --> C3[前端展示支付模态框]
-    C3 --> C4[POST /api/confirm-payment]
-    C4 --> C5[同步改写]
-    C5 --> C6[返回结果]
-
-    D --> D1[POST /api/create-payment]
-    D1 --> D2[创建 pending 订单\nrewritten_text=NULL]
-    D2 --> D3[生成 QR 码]
-    D3 --> D4[前端渲染 QR + 3s 轮询]
-    D4 --> D5[支付宝扫码支付]
-    D5 --> D6[Webhook 异步通知]
-    D6 --> D7[标记 paid + 启动后台线程]
-    D7 --> D8[异步改写完成]
-    D8 --> D9[轮询检测到 completed]
-    D9 --> C6
+    A[用户检测完成<br>看到完整结果] --> B{用户点击改写?}
+    B -->|未点击| C[继续浏览结果<br>或关闭页面]
+    
+    B -->|点击改写| D{已登录?}
+    D -->|否| E[弹出登录/注册]
+    E -->|登录成功| F{价格?}
+    D -->|是| F
+    
+    F -->|免费| G[POST /api/rewrite]
+    G -->|同步改写| H[展示对比结果]
+    
+    F -->|付费| I[POST /api/create-payment]
+    I --> J[创建 pending 订单<br>生成 QR 码]
+    J --> K[前端渲染 QR + 3s 轮询]
+    K --> L[用户扫码支付]
+    L --> M[Webhook 异步通知]
+    M --> N[标记 paid + 启动后台线程]
+    N --> O[异步改写完成]
+    O --> P[轮询检测到 completed]
+    P --> H
 ```
 
 ---
@@ -852,7 +864,7 @@ mindmap
 
 | 约定 | 值 |
 |------|-----|
-| **Session Key** | `session['user_id']` 存用户 ID；`session['last_text']`, `session['pending_rewrite']`, `session['last_rewritten']` 暂存上下文 |
+| **Session Key** | `session['user_id']` 存用户 ID；`session['last_text']` 服务端兜底；`sessionStorage.lastExtractedText` **前端主存**（避免 session 丢失导致文本不可用） |
 | **订单号格式** | `ORD-` + uuid4 hex[:8].upper()，例 `ORD-A1B2C3D4` |
 | **数据库路径** | `instance/aigc_humanizer.db` |
 | **时间格式** | ISO 8601 UTC (`datetime.utcnow().isoformat()`) |

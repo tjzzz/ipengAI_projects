@@ -68,7 +68,7 @@ async function analyzeText() {
             formData.append('file', uploadedFile);
             const resp = await _csrfFetch('/api/analyze', { method: 'POST', body: formData });
             const data = await resp.json();
-            handleAnalyzeResponse(data);
+            await handleAnalyzeResponse(data);
         } else {
             const text = textInput.value.trim();
             if (!text) {
@@ -88,7 +88,7 @@ async function analyzeText() {
                 body: JSON.stringify({ text })
             });
             const data = await resp.json();
-            handleAnalyzeResponse(data);
+            await handleAnalyzeResponse(data);
         }
     } catch (err) {
         hideLoading();
@@ -97,7 +97,7 @@ async function analyzeText() {
     }
 }
 
-function handleAnalyzeResponse(data) {
+async function handleAnalyzeResponse(data) {
     hideLoading();
     if (data.error) {
         showToast(data.error, 'error');
@@ -113,9 +113,10 @@ function handleAnalyzeResponse(data) {
         sessionStorage.setItem('lastOriginalFilename', 'humanized');
     }
 
-    // If uploaded via file, fetch extracted text on-demand for later rewrite use
-    if (data.has_extracted_text) {
-        _fetchExtractedText();
+    // Store the full text in sessionStorage so it's available for rewrite
+    // regardless of login state or server session persistence.
+    if (data.text) {
+        sessionStorage.setItem('lastExtractedText', data.text);
     }
 
     const wordCount = data.word_count;
@@ -125,35 +126,95 @@ function handleAnalyzeResponse(data) {
     // Store AI score for display
     sessionStorage.setItem('lastAiScore', aiScore);
 
-    // If not logged in, require login before proceeding with rewrite or payment
-    if (!currentUser) {
-        if (price > 0) {
-            // Paid flow: store payment info for after-login resume
-            sessionStorage.setItem('pendingPaidAnalysis', 'true');
-            sessionStorage.setItem('pendingPaymentInfo', JSON.stringify({
-                wordCount: wordCount,
-                price: price,
-                mode: 'academic'
-            }));
-        } else {
-            // Free flow: flag for free rewrite after login
-            sessionStorage.setItem('pendingFreeRewrite', 'true');
-        }
-        showAuthModal('login');
-        showToast('请先登录，登录后将自动完成改写', 'info');
-        return;
-    }
+    // Show results to ALL users regardless of login status.
+    // Login/paid gates are only triggered when user clicks the rewrite button.
+    displayResults(data.analysis, wordCount, price, data.over_limit);
+    updateRewriteButton(wordCount, price);
+    scrollToResults();
 
-    if (price === 0) {
-        // Free rewrite: directly call rewrite API without showing modal
-        handleFreeRewrite();
+    // Pre-create payment order for logged-in paid users so QR is ready instantly
+    if (currentUser && price > 0) {
+        precreatePaymentOrder(wordCount, price, 'academic');
+    }
+}
+
+/* ========== BACKGROUND PRE-CREATE PAYMENT ========== */
+async function precreatePaymentOrder(wordCount, price, mode) {
+    const text = getCurrentText();
+    if (!text) return;
+    try {
+        const resp = await _csrfFetch('/api/create-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, mode: mode || 'academic' })
+        });
+        const data = await resp.json();
+        if (data.order) {
+            sessionStorage.setItem('precreatedPayment', JSON.stringify({
+                order: data.order,
+                wordCount,
+                price
+            }));
+        }
+    } catch (e) {
+        // Silent fail — will create normally on click
+    }
+}
+
+/* ========== REWRITE BUTTON STATE ========== */
+const _rewriteController = { current: null };
+
+function updateRewriteButton(wordCount, price) {
+    const btn = document.getElementById('rewrite-btn');
+    const btnText = document.getElementById('rewrite-btn-text');
+    if (!btn || !btnText) return;
+
+    // Cancel previous listeners (AbortController), preserving other listeners on the element
+    if (_rewriteController.current) _rewriteController.current.abort();
+    const ac = new AbortController();
+    _rewriteController.current = ac;
+    const signal = ac.signal;
+
+    btnText.textContent = '✨ 自动改写降低 AI 率';
+    const isFree = price === 0;
+
+    if (!currentUser) {
+        btnText.textContent = isFree ? '✨ 登录后可免费改写' : '✨ 付费改写 ¥' + price.toFixed(2);
+        btn.addEventListener('click', () => {
+            if (isFree) {
+                sessionStorage.setItem('pendingFreeRewrite', 'true');
+            } else {
+                sessionStorage.setItem('pendingPaidAnalysis', 'true');
+                sessionStorage.setItem('pendingPaymentInfo', JSON.stringify({
+                    wordCount, price, mode: 'academic'
+                }));
+            }
+            showAuthModal('login');
+            showToast('请先登录，登录后将自动完成改写', 'info');
+        }, { signal });
+    } else if (isFree) {
+        btnText.textContent = '✨ 免费改写';
+        btn.addEventListener('click', handleFreeRewrite, { signal });
     } else {
-        // Paid rewrite: show payment modal and immediately create order + QR code
-        showPaymentModalWithAiScore(wordCount, price, aiScore);
-        // After modal is shown, immediately create payment order
-        setTimeout(() => {
-            createPaymentOrder(wordCount, price, 'academic');
-        }, 300);
+        btnText.textContent = '✨ 付费改写 ¥' + price.toFixed(2);
+        btn.addEventListener('click', () => {
+            const cached = sessionStorage.getItem('precreatedPayment');
+            if (cached) {
+                try {
+                    const { order, wordCount: wc, price: pr } = JSON.parse(cached);
+                    sessionStorage.removeItem('precreatedPayment');
+                    showPaymentModalWithAiScore(wc, pr, sessionStorage.getItem('lastAiScore') || 0);
+                    renderPaymentQR(order, wc, pr);
+                    startPaymentPolling(order.order_id);
+                    return;
+                } catch (e) { /* fall through to normal flow */ }
+            }
+            // Normal flow: create payment on demand
+            showPaymentModalWithAiScore(wordCount, price, sessionStorage.getItem('lastAiScore') || 0);
+            setTimeout(() => {
+                createPaymentOrder(wordCount, price, 'academic');
+            }, 300);
+        }, { signal });
     }
 }
 
@@ -162,12 +223,11 @@ async function handleFreeRewrite() {
     showLoading();
 
     try {
+        // Pass whatever text is available locally; if null, the backend
+        // falls back to session['last_text'] (set during /api/analyze).
+        // This handles file-upload flows where text may not be in
+        // sessionStorage yet (non-logged-in users, race conditions).
         const text = getCurrentText();
-        if (!text) {
-            showToast('没有可改写的文本', 'error');
-            hideLoading();
-            return;
-        }
 
         const resp = await _csrfFetch('/api/rewrite', {
             method: 'POST',
@@ -203,9 +263,9 @@ function showOverLimitUpgrade(data) {
     const section = document.getElementById('result-section');
     section.style.display = 'block';
 
-    // Fetch extracted text on-demand so paid flow can use it
-    if (data.has_extracted_text) {
-        _fetchExtractedText();
+    // Store full text for later paid rewrite use
+    if (data.text) {
+        sessionStorage.setItem('lastExtractedText', data.text);
     }
 
     const wordCount = data.word_count;
@@ -214,7 +274,6 @@ function showOverLimitUpgrade(data) {
     // Clear sub-sections (they're empty in over-limit case, but be safe)
     document.getElementById('sub-scores').innerHTML = '';
     document.getElementById('suggestions-list').innerHTML = '';
-    document.getElementById('paragraph-list').innerHTML = '';
     document.querySelector('.result-actions').style.display = 'none';
 
     scrollToResults();
@@ -244,7 +303,11 @@ function showOverLimitUpgrade(data) {
         document.getElementById('pay-price').textContent = '¥' + price;
         const _payBtnPrice = document.getElementById('pay-btn-price');
 if (_payBtnPrice) _payBtnPrice.textContent = price;
-        document.getElementById('payment-qr-section').style.display = 'none';
+        // Show loading state immediately instead of hiding QR section
+        const _qs = document.getElementById('payment-qr-section');
+        if (_qs) _qs.style.display = 'block';
+        document.getElementById('qrcode-container').innerHTML = '';
+        document.getElementById('poll-status').innerHTML = '⏳ 正在生成二维码...';
 
         createPaymentOrder(wordCount, price, 'academic');
     })();
@@ -338,39 +401,6 @@ function displayResults(analysis, wordCount, price, overLimit = false) {
                 </div>
             `;
         });
-    }
-
-    // Paragraph analysis
-    const paragraphList = document.getElementById('paragraph-list');
-    paragraphList.innerHTML = '';
-
-    if (analysis.paragraphs && analysis.paragraphs.length > 0) {
-        analysis.paragraphs.forEach(p => {
-            const pScore = p.ai_score;
-            let riskClass = 'risk-safe', riskText = '安全';
-            if (pScore >= 40) { riskClass = 'risk-high'; riskText = '高风险'; }
-            else if (pScore >= 20) { riskClass = 'risk-warning'; riskText = '需关注'; }
-
-            const barColor = pScore > 60 ? '#ef4444' : pScore > 30 ? '#f59e0b' : '#10b981';
-
-            paragraphList.innerHTML += `
-                <div class="paragraph-item" data-paragraph="${p.paragraph}">
-                    <span class="paragraph-index">${p.paragraph}</span>
-                    <div class="paragraph-bar">
-                        <div class="paragraph-fill" style="width:0%;background:${barColor}" data-target="${pScore}"></div>
-                    </div>
-                    <span class="paragraph-score" style="color:${barColor}">${pScore}%</span>
-                    <span class="paragraph-risk ${riskClass}">${riskText}</span>
-                </div>
-            `;
-        });
-
-        // Animate bars after a short delay
-        setTimeout(() => {
-            document.querySelectorAll('.paragraph-fill').forEach(el => {
-                el.style.width = el.dataset.target + '%';
-            });
-        }, 300);
     }
 
     // Store price for payment

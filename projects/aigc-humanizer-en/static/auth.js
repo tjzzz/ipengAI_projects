@@ -137,6 +137,7 @@ async function handleLogin() {
         const pendingFree = sessionStorage.getItem('pendingFreeRewrite');
         if (pendingFree) {
             sessionStorage.removeItem('pendingFreeRewrite');
+            // Text was already stored in sessionStorage by handleAnalyzeResponse
             setTimeout(() => {
                 handleFreeRewrite();
             }, 300);
@@ -152,12 +153,9 @@ async function handleLogin() {
             const wc = pendingInfo.wordCount || 0;
             const pr = pendingInfo.price || 0;
             setTimeout(() => {
-                showPaymentModal();
-                document.getElementById('pay-word-count').textContent = wc + ' 词';
-                document.getElementById('pay-price').textContent = '¥' + pr;
-                const _p2 = document.getElementById('pay-btn-price');
-if (_p2) _p2.textContent = pr;
-                document.getElementById('payment-qr-section').style.display = 'none';
+                const aiScore = parseInt(sessionStorage.getItem('lastAiScore') || '0');
+                showPaymentModalWithAiScore(wc, pr, aiScore);
+                showQRLoading();
                 createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
             }, 500);
         }
@@ -229,6 +227,7 @@ async function handleRegister() {
         const pendingFree = sessionStorage.getItem('pendingFreeRewrite');
         if (pendingFree) {
             sessionStorage.removeItem('pendingFreeRewrite');
+            // Text was already stored in sessionStorage by handleAnalyzeResponse
             setTimeout(() => {
                 handleFreeRewrite();
             }, 300);
@@ -244,12 +243,9 @@ async function handleRegister() {
             const wc = pendingInfo.wordCount || 0;
             const pr = pendingInfo.price || 0;
             setTimeout(() => {
-                showPaymentModal();
-                document.getElementById('pay-word-count').textContent = wc + ' 词';
-                document.getElementById('pay-price').textContent = '¥' + pr;
-                const _p2 = document.getElementById('pay-btn-price');
-if (_p2) _p2.textContent = pr;
-                document.getElementById('payment-qr-section').style.display = 'none';
+                const aiScore = parseInt(sessionStorage.getItem('lastAiScore') || '0');
+                showPaymentModalWithAiScore(wc, pr, aiScore);
+                showQRLoading();
                 createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
             }, 500);
         }

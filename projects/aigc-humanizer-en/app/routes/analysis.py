@@ -105,6 +105,7 @@ def api_analyze():
             "paragraphs": paragraph_analysis,
             "suggestions": suggestions
         },
+        "text": text,
         "text_preview": text[:500] + "..." if len(text) > 500 else text,
         "word_count": word_count,
         "price": round(price, 2),

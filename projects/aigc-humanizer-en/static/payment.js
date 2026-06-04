@@ -57,13 +57,8 @@ function showPaymentModalWithAiScore(wordCount, price, aiScore) {
         }
     }
 
-    // Show QR section immediately with loading state while API generates the QR code
-    const qrSection = document.getElementById('payment-qr-section');
-    if (qrSection) {
-        qrSection.style.display = 'block';
-    }
-    document.getElementById('poll-status').innerHTML = '⏳ 正在生成二维码...';
-    document.getElementById('qrcode-container').innerHTML = '';
+    // Show QR loading state while API generates the QR code
+    showQRLoading();
 
     // Show modal
     showPaymentModal();
@@ -103,6 +98,14 @@ if (paymentModal) {
     });
 }
 
+/* ========== QR LOADING HELPER ========== */
+function showQRLoading() {
+    const qs = document.getElementById('payment-qr-section');
+    if (qs) qs.style.display = 'block';
+    document.getElementById('qrcode-container').innerHTML = '';
+    document.getElementById('poll-status').innerHTML = '⏳ 正在生成二维码...';
+}
+
 /* ========== QR CODE ========== */
 let qrExpiryInterval = null;
 let qrExpirySeconds = 600; // Default 10 minutes
@@ -110,10 +113,9 @@ let qrExpirySeconds = 600; // Default 10 minutes
 function renderPaymentQR(order, wordCount, price) {
     const qrCode = order.qr_code;
 
-    // Update payment modal content instead of destroying score-card
+    // Update payment modal content
     document.getElementById('pay-word-count').textContent = wordCount + ' 词';
     document.getElementById('pay-price').textContent = '¥' + parseFloat(price).toFixed(2);
-    document.getElementById('qr-pay-price').textContent = '¥' + parseFloat(price).toFixed(2);
 
     // Show QR section in modal
     const qrSection = document.getElementById('payment-qr-section');
@@ -250,7 +252,12 @@ async function refreshQRCode() {
 
     try {
         const wordCount = parseInt(document.getElementById('pay-word-count').textContent.replace(/[^0-9]/g, ''));
-        const price = parseFloat(document.getElementById('qr-pay-price').textContent.replace('¥', ''));
+        const priceTxt = document.getElementById('pay-price').textContent.replace('¥', '').trim();
+        const price = parseFloat(priceTxt);
+        if (isNaN(price) || price <= 0) {
+            showToast('价格异常，请重新检测', 'error');
+            return;
+        }
 
         await createPaymentOrder(wordCount, price, 'academic');
 
@@ -543,7 +550,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('pay-price').textContent = '¥' + pr;
             const _p2 = document.getElementById('pay-btn-price');
 if (_p2) _p2.textContent = pr;
-            document.getElementById('payment-qr-section').style.display = 'none';
+            showQRLoading();
             createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
         }, 800);
     }

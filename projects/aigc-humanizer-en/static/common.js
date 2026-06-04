@@ -17,7 +17,7 @@ function _csrfFetch(url, options) {
 
 /* ========== EXTRACTED TEXT (P0-2: on-demand fetch) ========== */
 function _fetchExtractedText() {
-    _csrfFetch('/api/extracted-text', { method: 'GET' })
+    return _csrfFetch('/api/extracted-text', { method: 'GET' })
         .then(res => res.ok ? res.json() : null)
         .then(data => { if (data?.text) sessionStorage.setItem('lastExtractedText', data.text); })
         .catch(() => {});
@@ -275,17 +275,4 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
-/* ========== PARAGRAPH CLICK (Event Delegation) ========== */
-const paragraphListEl = document.getElementById('paragraph-list');
-if (paragraphListEl) {
-    paragraphListEl.addEventListener('click', (e) => {
-        const item = e.target.closest('.paragraph-item');
-        if (item) {
-            showToast('段落详情功能即将上线', 'info');
-        }
-    });
-}
-
-function showDetail(paragraphIndex) {
-    showToast('段落详情功能即将上线', 'info');
-}
+/* (paragraph-list removed — no longer shown in results) */
