@@ -5,6 +5,7 @@
 
 # Allow aigc-humanizer-en project
 !/aigc-humanizer-en
+!/ipengai-landing
 
 # Common junk files to exclude everywhere
 .DS_Store
