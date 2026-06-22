@@ -18,9 +18,9 @@
 
 | 方案 | 价格 | 说明 |
 |------|------|------|
-| 免费检测 | ¥0 | 50-500 词 AI 检测 + 段落分析 + 修改建议 |
-| 改写付费 | ¥14.9/1000 词 | 无限字数检测 + 全文降 AI 改写 + 7 天无限修改 |
-| 套餐包 | ¥99/月 | 50000 词改写额度 + 优先处理（即将上线） |
+| 免费检测 | ¥0 | 200 词 AI 检测 + 段落分析 + 修改建议 |
+| 改写付费 | ¥14.9/1000 词 | 按比例计费，无限字数检测 + 全文降 AI 改写 + 7 天无限修改 |
+| 畅写包 | ¥49/月 | 5000 词改写额度 + 优先处理（即将上线） |
 
 ## 技术栈
 
@@ -31,8 +31,8 @@
 | 模板 | Jinja2 + HTML/CSS (Vanilla JS) | — |
 | 文档处理 | python-docx, PyMuPDF | >=1.0, >=1.20 |
 | 支付 | MockPaymentAdapter / AlipayPaymentAdapter + alipay-sdk-python | >=3.7 |
-| 检测引擎 | 规则引擎（困惑度/突发性/AI模式/可读性/结构） | — |
-| 改写引擎 | RuleBasedHumanizer（适配器模式，可切换 API） | — |
+| 检测引擎 | 规则引擎（困惑度/突发性/AI模式/可读性/结构）+ Sapling.ai API（可选） | — |
+| 改写引擎 | ApiHumanizer（ai-text-humanizer.com，可切回 RuleBased） | — |
 
 ## 快速开始
 
@@ -55,8 +55,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 4. 环境变量设置（可选）
-cp .env.example .env
-# 编辑 .env 文件，设置 SECRET_KEY 等变量
+cp config.example.py config.py
+# 编辑 config.py，填写 API Key、密钥等
 ```
 
 ### 运行
@@ -79,16 +79,19 @@ python3 app.py
 ```
 aigc-humanizer-en/
 ├── app.py                  # Flask 入口点（15 行，委托 app.create_app）
+├── config.py               # 唯一配置文件（含密钥，不提交 git）
+├── config.example.py       # 配置示例（部署时复制为 config.py）
 ├── app/                    # 应用核心包
 │   ├── __init__.py         # 应用工厂 create_app()
-│   ├── config.py           # 配置常量（定价、上传类型）
 │   ├── session.py          # 文件系统 Session 实现
-│   ├── extensions.py       # 共享实例（csrf, limiter, adapters）
+│   ├── extensions.py       # 共享实例（csrf, limiter, adapters, detectors）
 │   ├── helpers.py          # 工具函数（DB、文本提取、文件生成、后台任务）
 │   ├── models.py           # 数据模型（User, Order）
 │   ├── humanize.py         # 改写引擎（规则版）
 │   ├── humanizer_adapter.py # 改写适配器（RuleBased + Api）
-│   ├── ai_checker.py       # AI 检测引擎（5 维评分）
+│   ├── ai_checker.py       # AI 检测引擎（5 维评分，规则版）
+│   ├── ai_checker_api.py   # AI 检测 API 封装（Sapling/Originality）
+│   ├── detector_adapter.py # 检测适配器（规则 / Sapling / Originality）
 │   ├── payment_adapter.py  # 支付适配器（Mock + Alipay）
 │   └── routes/             # 路由模块
 │       ├── main.py         # 首页、订单页、健康检查
@@ -131,7 +134,7 @@ aigc-humanizer-en/
 
 | 方法 | 路径 | 说明 | 需登录 |
 |------|------|------|--------|
-| POST | `/api/analyze` | AI 检测（text / file, 免费 ≤500 词） | 否 |
+| POST | `/api/analyze` | AI 检测（text / file, 免费 ≤200 词） | 否 |
 | POST | `/api/rewrite` | 发起改写请求（旧版流程） | 是 |
 | POST | `/api/confirm-payment` | 确认支付并执行改写（旧版流程） | 是 |
 | POST | `/api/preview-rewrite` | 免费预览改写效果（限首段 200 词） | 否 |
@@ -190,22 +193,22 @@ aigc-humanizer-en/
 两个核心组件使用适配器模式，支持方便替换实现：
 
 ```
-PaymentAdapter                    HumanizerAdapter
-├── MockPaymentAdapter (开发)     ├── RuleBasedHumanizer (当前)
-└── AlipayPaymentAdapter (生产)   └── ApiHumanizer (待接入)
+PaymentAdapter                    HumanizerAdapter                AIDetector
+├── MockPaymentAdapter (开发)     ├── RuleBasedHumanizer          ├── RuleBasedDetector (规则)
+└── AlipayPaymentAdapter (生产)   └── ApiHumanizer (当前)          └── SaplingApiDetector / Originality
 ```
 
-通过 `app.config['PAYMENT_ADAPTER']` 和 `app.config['HUMANIZER_ADAPTER']` 配置切换。
+通过 `config.py` 中的 `PAYMENT_ADAPTER`、`HUMANIZER_ADAPTER`、`AI_DETECTOR_ADAPTER` 切换。
 
-### 支付流程（双路径）
+### 支付流程
 
 ```
-路径A (<500词, 旧版流程): /api/rewrite → /api/confirm-payment → 同步改写 → 返回结果
-路径B (>500词, 新版流程): /api/create-payment → QR码扫码 → webhook → 后台线程异步改写 → 轮询展示
+免费改写 (≤200词): /api/rewrite → 同步改写 → 返回结果（每日限 2 次/用户）
+付费改写 (>200词): /api/create-payment → QR码扫码 → webhook → 后台线程异步改写 → 轮询展示
 ```
 
-- 路径A 使用 `Order.create(status=completed)`，改写同步完成
-- 路径B 使用 `Order.create_payment_record(status=pending)`，改写异步在后台线程中执行
+- 免费改写使用 `Order.create(status=completed, payment_status='free')`，改写同步完成
+- 付费改写使用 `Order.create_payment_record(status=pending)`，改写异步在后台线程中执行
 
 ### 检测算法
 
@@ -315,15 +318,12 @@ class OpenAIBasedHumanizer(HumanizerAdapter):
 
 ## TODO
 
-- [ ] **AI 检测引擎升级** — 当前基于规则引擎的 5 维评分方案精度有限，计划接入更专业的 AI 检测模型或 API（如 GPTZero / Originality.ai），提升检测准确率与可信度
-- [ ] **文档解析细化** — 增强 .docx / .pdf 解析能力，支持图表内容识别与提取、代码块格式保留、公式渲染等场景，确保复杂文档在检测和改写前后结构完整
-- [ ] **微信支付接入** — 在现有支付宝当面付基础上，新增微信支付（Native 支付 / JSAPI），为用户提供更多支付选择
-- [ ] **密码找回流程** — 当前缺少邮箱验证与密码重置能力，用户忘记密码后无法自行恢复账号，依赖客服人工处理
-- [ ] **Session 存储安全** — 将 pickle 序列化替换为 JSON，降低反序列化安全风险；同时支持 Redis 等外部存储以支持多进程部署
-- [ ] **数据库性能优化** — 为 `user_id`、`order_id`、`payment_status` 等高频查询字段添加索引，避免全表扫描；后续可引入 Alembic 管理迁移版本
-- [ ] **监控与可观测性** — 增强健康检查（含数据库连通性 / 支付适配器状态）、引入结构化日志（含请求 ID 追踪）、接入 Sentry 等错误跟踪服务
-- [ ] **免费额度薅羊毛** — 用户可以通过多次创建账号的方式，每次用500的免费额度进行改写。
-- [ ] **分级改写质量** — 免费（≤500词）使用基础规则引擎改写，降 AI 率有限；付费用户启用增强模式（更丰富的同义词库 + 句式重组），效果更好，形成价值差异
+- [ ] **文档解析细化** — 增强 .docx / .pdf 解析能力，支持图表内容识别与提取、代码块格式保留、公式渲染等场景
+- [ ] **微信支付接入** — 在现有支付宝当面付基础上，新增微信支付（Native 支付 / JSAPI）
+- [ ] **密码找回流程** — 当前缺少邮箱验证与密码重置能力
+- [ ] **Session 存储安全** — 将 pickle 序列化替换为 JSON，降低反序列化安全风险；同时支持 Redis 等外部存储
+- [ ] **数据库性能优化** — 为 `user_id`、`order_id`、`payment_status` 等高频查询字段添加索引
+- [ ] **监控与可观测性** — 增强健康检查、引入结构化日志、接入 Sentry 等错误跟踪服务
 ---
 
 ## License

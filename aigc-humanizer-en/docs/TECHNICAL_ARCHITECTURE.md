@@ -869,7 +869,7 @@ mindmap
 | **数据库路径** | `instance/aigc_humanizer.db` |
 | **时间格式** | ISO 8601 UTC (`datetime.utcnow().isoformat()`) |
 | **API 响应** | 成功: `{success: true, ...}`；失败: `{error: "消息"}` |
-| **价格** | `PRICE_PER_1000_WORDS = 9.9`, `FREE_WORD_LIMIT = 300`, `MAX_FREE_ANALYSIS_WORDS = 600` |
+| **价格** | `PRICE_PER_1000_WORDS = 14.9`, `FREE_WORD_LIMIT = 200`, `FREE_DAILY_REWRITES = 2` |
 | **密码安全** | `werkzeug.security.generate_password_hash` (pbkdf2:sha256) |
 | **订单过期** | `expires_at = created_at + 7 days`；未支付 30 分钟过期 |
 | **适配器配置** | `PAYMENT_ADAPTER=mock/alipay`, `HUMANIZER_ADAPTER=rule_based/api` |

@@ -7,7 +7,7 @@ import logging
 from flask import Blueprint, request, jsonify, session
 from app.extensions import limiter
 from app.helpers import get_db, login_required
-from app.config import PRICE_PER_1000_WORDS
+from config import PRICE_PER_1000_WORDS, FREE_WORD_LIMIT, FREE_DAILY_REWRITES
 
 rewrite_bp = Blueprint('rewrite', __name__)
 
@@ -22,7 +22,7 @@ def api_rewrite():
     Requires login.
     """
     from app.extensions import humanizer_adapter as humanizer
-    from app.ai_checker import analyze_text as run_analysis
+    from app.extensions import ai_detector as run_analysis
     from app.models import Order
 
     data = request.get_json(silent=True) or {}
@@ -33,7 +33,18 @@ def api_rewrite():
         return jsonify({"error": "没有可改写的文本，请先分析"}), 400
 
     word_count = len(text.split())
-    price = max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS)
+
+    # 免费词数以内直接改写，超出需先完成支付
+    if word_count > FREE_WORD_LIMIT:
+        return jsonify({"error": f"文本超过{FREE_WORD_LIMIT}词免费额度，请先完成支付"}), 402
+
+    # 每天免费改写次数上限
+    conn = get_db()
+    today_count = Order.count_free_rewrites_today(conn, session.get('user_id'))
+    if today_count >= FREE_DAILY_REWRITES:
+        return jsonify({"error": f"今日免费改写次数已达上限（{FREE_DAILY_REWRITES}次），请明日再试或付费"}), 429
+
+    price = round(PRICE_PER_1000_WORDS * (word_count / 1000), 2)
     price = round(price, 2)
 
     order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"

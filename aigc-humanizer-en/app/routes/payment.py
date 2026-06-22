@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, session
 from app.extensions import limiter
 from app.helpers import get_db, login_required, process_payment_success
-from app.config import PRICE_PER_1000_WORDS
+from config import PRICE_PER_1000_WORDS
 
 payment_bp = Blueprint('payment', __name__)
 
@@ -47,8 +47,7 @@ def api_create_payment():
         return jsonify({"error": "没有可改写的文本，请先分析"}), 400
 
     word_count = len(text.split())
-    price = max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS)
-    price = round(price, 2)
+    price = round(PRICE_PER_1000_WORDS * (word_count / 1000), 2)
 
     # 生成格式: order_YYYYMMDD_随机字符
     date_str = datetime.now().strftime("%Y%m%d")

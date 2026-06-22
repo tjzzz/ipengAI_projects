@@ -16,6 +16,8 @@ rewrite_executor = ThreadPoolExecutor(max_workers=5)
 # Adapters — set during create_app()
 payment_adapter = None
 humanizer_adapter = None
+ai_detector = None          # analyze_text(text) -> dict
+ai_paragraph_detector = None  # analyze_by_paragraphs(text) -> list[dict]
 
 
 def set_adapters(payment, humanizer):
@@ -26,4 +28,14 @@ def set_adapters(payment, humanizer):
     logging.info(
         f"Adapters initialized: payment={type(payment).__name__}, "
         f"humanizer={type(humanizer).__name__}"
+    )
+
+
+def set_ai_detector(detect_fn, paragraph_fn):
+    """Set AI detector functions (called once during app creation)."""
+    global ai_detector, ai_paragraph_detector
+    ai_detector = detect_fn
+    ai_paragraph_detector = paragraph_fn
+    logging.info(
+        f"AI detector initialized: {getattr(detect_fn, '__name__', '?')}"
     )

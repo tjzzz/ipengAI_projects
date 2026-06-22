@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Humanizer - 降低AI检测率，让论文更自然</title>
+    <title>AI Humanizer - AI辅助英文写作，让论文更自然</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='Inter,sans-serif' font-weight='800' font-size='18' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -43,24 +43,20 @@
                 <div class="hero-content">
                     <div class="hero-badge">🔥 基于 Turnitin 检测算法</div>
                     <h1 class="hero-title">
-                        降低 <span class="gradient-text">AI 检测率</span><br>
+                        <span class="gradient-text">AI辅助英文写作</span><br>
                         让论文更自然
                     </h1>
                     <p class="hero-subtitle">
                         上传英文论文或粘贴文字，一键检测 AI 率。精准改写、保留原意，<br>
-                        轻松通过 Turnitin、知网、GPTZero 等主流检测平台。
+                        轻松通过 Turnitin、GPTZero 等主流检测平台。
                     </p>
                     <div class="hero-stats">
-                        <div class="stat-item">
-                            <span class="stat-number">99.2%</span>
-                            <span class="stat-label">达标率</span>
-                        </div>
                         <div class="stat-item">
                             <span class="stat-number">7天</span>
                             <span class="stat-label">无限修改</span>
                         </div>
                         <div class="stat-item">
-                            <span class="stat-number">500词</span>
+                            <span class="stat-number">200词</span>
                             <span class="stat-label">免费检测</span>
                         </div>
                     </div>
@@ -85,7 +81,7 @@
 
                         <!-- Text Paste -->
                         <div class="text-input-area">
-                            <textarea id="text-input" class="text-input" placeholder="直接粘贴你的英文文本到这里...&#10;&#10;支持 50-500 词的免费检测"></textarea>
+                            <textarea id="text-input" class="text-input" placeholder="直接粘贴你的英文文本到这里...&#10;&#10;支持 200 词的免费检测"></textarea>
                         </div>
 
                         <!-- Buttons -->
@@ -403,10 +399,10 @@
             <div class="pricing-cards">
                 <div class="pricing-card">
                     <div class="pricing-badge">免费</div>
-                    <h4 class="pricing-name">检测版</h4>
+                    <h4 class="pricing-name">尝鲜版</h4>
                     <div class="pricing-price"><span class="price">¥0</span></div>
                     <ul class="pricing-features">
-                        <li>✓ 50-500 词 AI 检测</li>
+                        <li>✓ 200 词 AI 检测</li>
                         <li>✓ 段落级分析</li>
                         <li>✓ 修改建议生成</li>
                         <li>✓ 改写效果预览</li>
@@ -416,9 +412,13 @@
                     <button class="btn btn-outline btn-full" onclick="scrollToUpload()">开始检测</button>
                 </div>
                 <div class="pricing-card featured">
-                    <div class="pricing-badge popular">推荐</div>
-                    <h4 class="pricing-name">改写版</h4>
-                    <div class="pricing-price"><span class="price">¥14.9</span><span class="per"> /1000词</span></div>
+                    <div class="pricing-badge popular">🔥 人气推荐</div>
+                    <h4 class="pricing-name">专业版</h4>
+                    <div class="pricing-price">
+                        <span class="original-price">¥24.9</span>
+                        <span class="price discount">折扣价 ¥14.9</span>
+                        <span class="per"> /千词</span>
+                    </div>
                     <ul class="pricing-features">
                         <li>✓ 无限字数 AI 检测</li>
                         <li>✓ 段落级分析</li>
@@ -431,7 +431,7 @@
                 </div>
                 <div class="pricing-card">
                     <div class="pricing-badge">即将上线</div>
-                    <h4 class="pricing-name">流量包</h4>
+                    <h4 class="pricing-name">畅写包</h4>
                     <div class="pricing-price"><span class="price">¥49</span><span class="per"> /月</span></div>
                     <ul class="pricing-features">
                         <li>✓ 无限次 AI 检测</li>

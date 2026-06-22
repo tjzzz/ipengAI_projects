@@ -8,6 +8,8 @@ import os
 import time
 import json
 import logging
+
+from config import AI_TEXT_HUMANIZER_EMAIL as _CFG_EMAIL, AI_TEXT_HUMANIZER_PASSWORD as _CFG_PASSWORD
 from abc import ABC, abstractmethod
 from urllib import request as urllib_request
 from urllib.parse import urlencode
@@ -63,8 +65,8 @@ class ApiHumanizer(HumanizerAdapter):
             email: ai-text-humanizer.com account email (falls back to env var)
             password: ai-text-humanizer.com account password (falls back to env var)
         """
-        self.email = email or os.environ.get("AI_TEXT_HUMANIZER_EMAIL", "")
-        self.password = password or os.environ.get("AI_TEXT_HUMANIZER_PASSWORD", "")
+        self.email = email or _CFG_EMAIL
+        self.password = password or _CFG_PASSWORD
 
         if not self.email or not self.password:
             logger.warning(
@@ -89,7 +91,7 @@ class ApiHumanizer(HumanizerAdapter):
         if not self.email or not self.password:
             raise RuntimeError(
                 "ai-text-humanizer.com credentials not configured. "
-                "Set AI_TEXT_HUMANIZER_EMAIL and AI_TEXT_HUMANIZER_PASSWORD in .env"
+                "Set AI_TEXT_HUMANIZER_EMAIL and AI_TEXT_HUMANIZER_PASSWORD in config.py"
             )
 
         word_count = self._count_words(text)

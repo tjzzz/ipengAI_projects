@@ -10,6 +10,9 @@ import os
 import logging
 import time
 
+from config import ALIPAY_APP_ID, ALIPAY_PID, ALIPAY_PRIVATE_KEY, ALIPAY_PUBLIC_KEY, \
+    ALIPAY_GATEWAY_URL, ALIPAY_NOTIFY_URL, ALIPAY_RETURN_URL, PAYMENT_ADAPTER
+
 logger = logging.getLogger(__name__)
 
 # Retry config for transient HTTP errors (502, 503, 504)
@@ -503,14 +506,14 @@ def create_payment_adapter(config=None):
     """
     if config is None:
         config = {
-            "PAYMENT_ADAPTER": os.environ.get("PAYMENT_ADAPTER", "mock"),
-            "ALIPAY_APP_ID": os.environ.get("ALIPAY_APP_ID", ""),
-            "ALIPAY_PID": os.environ.get("ALIPAY_PID", ""),
-            "ALIPAY_PRIVATE_KEY": os.environ.get("ALIPAY_PRIVATE_KEY", ""),
-            "ALIPAY_PUBLIC_KEY": os.environ.get("ALIPAY_PUBLIC_KEY", ""),
-            "ALIPAY_GATEWAY_URL": os.environ.get("ALIPAY_GATEWAY_URL", "https://openapi.alipay.com/gateway.do"),
-            "ALIPAY_NOTIFY_URL": os.environ.get("ALIPAY_NOTIFY_URL", ""),
-            "ALIPAY_RETURN_URL": os.environ.get("ALIPAY_RETURN_URL", ""),
+            "PAYMENT_ADAPTER": PAYMENT_ADAPTER,
+            "ALIPAY_APP_ID": ALIPAY_APP_ID,
+            "ALIPAY_PID": ALIPAY_PID,
+            "ALIPAY_PRIVATE_KEY": ALIPAY_PRIVATE_KEY,
+            "ALIPAY_PUBLIC_KEY": ALIPAY_PUBLIC_KEY,
+            "ALIPAY_GATEWAY_URL": ALIPAY_GATEWAY_URL,
+            "ALIPAY_NOTIFY_URL": ALIPAY_NOTIFY_URL,
+            "ALIPAY_RETURN_URL": ALIPAY_RETURN_URL,
         }
 
     adapter_type = config.get("PAYMENT_ADAPTER", "mock")

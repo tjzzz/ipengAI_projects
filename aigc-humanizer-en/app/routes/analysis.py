@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify, session
 from app.extensions import limiter
 from app.helpers import get_db, login_required, derive_risk_level, \
     generate_modification_suggestions, extract_text
-from app.config import ALLOWED_UPLOAD_MIMETYPES, PRICE_PER_1000_WORDS, FREE_WORD_LIMIT
+from config import ALLOWED_UPLOAD_MIMETYPES, PRICE_PER_1000_WORDS, FREE_WORD_LIMIT
 
 analysis_bp = Blueprint('analysis', __name__)
 
@@ -83,13 +83,13 @@ def api_analyze():
     if word_count <= FREE_WORD_LIMIT:
         price = 0
     else:
-        price = max(PRICE_PER_1000_WORDS * (word_count / 1000), PRICE_PER_1000_WORDS)
+        price = round(PRICE_PER_1000_WORDS * (word_count / 1000), 2)
 
     # Run AI detection (always run, even for over-limit texts)
-    from app.ai_checker import analyze_text as run_analysis, analyze_by_paragraphs
+    from app.extensions import ai_detector, ai_paragraph_detector
     try:
-        full_analysis = run_analysis(text)
-        paragraph_analysis = analyze_by_paragraphs(text)
+        full_analysis = ai_detector(text)
+        paragraph_analysis = ai_paragraph_detector(text)
     except Exception:
         logging.exception("AI analysis failed")
         return jsonify({"error": "分析出错，请稍后重试"}), 500
@@ -129,7 +129,7 @@ def api_suggestion_detail():
     if not paragraph_text or len(paragraph_text) < 50:
         return jsonify({"error": "段落文本太短"}), 400
 
-    from app.ai_checker import analyze_text as run_analysis
+    from app.extensions import ai_detector as run_analysis
     try:
         analysis = run_analysis(paragraph_text)
         suggestions = generate_modification_suggestions(analysis, paragraph_text)
@@ -159,7 +159,7 @@ def api_extracted_text():
 def api_preview_rewrite():
     """Preview what the rewritten text would look like (free preview, limited)."""
     from app.extensions import humanizer_adapter
-    from app.ai_checker import analyze_text as run_analysis
+    from app.extensions import ai_detector as run_analysis
 
     data = request.get_json(silent=True) or {}
     text = data.get('text', '')

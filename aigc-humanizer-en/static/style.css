@@ -981,6 +981,7 @@ body {
 .pricing-name { font-size: 1.2rem; font-weight: 600; margin-bottom: 16px; }
 .pricing-price { margin-bottom: 24px; }
 .price { font-size: 2.5rem; font-weight: 800; }
+.original-price { font-size: 1.2rem; color: var(--gray-400); text-decoration: line-through; display: block; }
 .per { font-size: 0.9rem; color: var(--gray-500); }
 
 .pricing-features {

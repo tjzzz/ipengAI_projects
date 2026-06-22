@@ -63,7 +63,8 @@ def api_order_detail(order_id):
     if order['user_id'] != user_id:
         return jsonify({"error": "无权访问该订单"}), 403
 
-    return jsonify({"order": order})
+    _safe = {k: v for k, v in order.items() if k not in ('original_text', 'rewritten_text')}
+    return jsonify({"order": _safe})
 
 
 @orders_bp.route('/api/orders/<order_id>/rehumanize', methods=['POST'])
@@ -73,7 +74,7 @@ def api_rehumanize(order_id):
     Requires login and non-expired order.
     """
     from app.extensions import humanizer_adapter as humanizer
-    from app.ai_checker import analyze_text as run_analysis
+    from app.extensions import ai_detector as run_analysis
     from app.models import Order
 
     user_id = session.get('user_id')
@@ -90,6 +91,9 @@ def api_rehumanize(order_id):
 
     if order['user_id'] != user_id:
         return jsonify({"error": "无权操作该订单"}), 403
+
+    if order.get('payment_status') != 'paid':
+        return jsonify({"error": "仅付费订单可免费再次改写"}), 403
 
     expires_at = order['expires_at']
     try:

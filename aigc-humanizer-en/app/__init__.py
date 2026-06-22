@@ -4,14 +4,13 @@ Creates and configures the Flask application instance.
 """
 
 import os
+import sys
 import logging
 import threading
 from datetime import timedelta
 
-from dotenv import load_dotenv
 from flask import Flask, jsonify
 
-load_dotenv()
 
 # Configure logging: structured format for production debugging
 logging.basicConfig(
@@ -23,7 +22,12 @@ logging.basicConfig(
 
 def create_app():
     """Create and configure the Flask application."""
-    from app.config import PROJ_ROOT
+    # 项目根目录加入 Python 路径，config.py 在根目录
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+
+    from config import PROJ_ROOT, SECRET_KEY, PAYMENT_ADAPTER, HUMANIZER_ADAPTER, AI_DETECTOR_ADAPTER
 
     app = Flask(__name__,
                 root_path=PROJ_ROOT,
@@ -32,18 +36,18 @@ def create_app():
                 static_url_path='/static')
 
     # ── Secret key ──
-    if not os.environ.get('SECRET_KEY'):
+    if not SECRET_KEY:
         raise RuntimeError(
-            "SECRET_KEY environment variable must be set. "
+            "SECRET_KEY must be set in config.py. "
             "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
         )
-    app.secret_key = os.environ['SECRET_KEY']
+    app.secret_key = SECRET_KEY
 
     # ── Configuration ──
     app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
     app.config['UPLOAD_FOLDER'] = os.path.join(PROJ_ROOT, 'uploads')
-    app.config['PAYMENT_ADAPTER'] = os.environ.get('PAYMENT_ADAPTER', 'mock')
-    app.config['HUMANIZER_ADAPTER'] = os.environ.get('HUMANIZER_ADAPTER', 'rule_based')
+    app.config['PAYMENT_ADAPTER'] = PAYMENT_ADAPTER
+    app.config['HUMANIZER_ADAPTER'] = HUMANIZER_ADAPTER
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2)
 
     # ── Filesystem session ──
@@ -60,9 +64,10 @@ def create_app():
     init_db()
 
     # ── Adapters ──
-    from app.extensions import set_adapters
+    from app.extensions import set_adapters, set_ai_detector
     from app.payment_adapter import create_payment_adapter
     from app.humanizer_adapter import RuleBasedHumanizer, ApiHumanizer
+    from app.detector_adapter import create_detector
 
     payment_adapter = create_payment_adapter()
     if app.config.get('HUMANIZER_ADAPTER') == 'api':
@@ -71,6 +76,10 @@ def create_app():
     else:
         humanizer_adapter = RuleBasedHumanizer()
     set_adapters(payment_adapter, humanizer_adapter)
+
+    # ── AI Detector ──
+    detect_fn, para_fn = create_detector(AI_DETECTOR_ADAPTER)
+    set_ai_detector(detect_fn, para_fn)
 
     # ── Safety check: mock adapter in production ──
     if app.config.get('PAYMENT_ADAPTER') == 'mock' and os.environ.get('FLASK_ENV') == 'production':

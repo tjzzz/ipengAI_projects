@@ -8,7 +8,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
-from app.config import PROJ_ROOT
+from config import PROJ_ROOT
 
 DB_DIR = os.path.join(PROJ_ROOT, 'instance')
 DB_PATH = os.path.join(DB_DIR, 'aigc_humanizer.db')
@@ -138,20 +138,33 @@ class Order:
     def create(cls, conn, user_id, order_id, original_text, rewritten_text,
                original_format, original_filename, word_count, price, mode,
                original_score, rewritten_score):
-        """Create a new order record."""
+        """Create a free rewrite order record (payment_status='free')."""
         created_at = datetime.now(timezone.utc).isoformat()
         expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
         conn.execute(
             """INSERT INTO orders
                (user_id, order_id, original_text, rewritten_text,
                 original_format, original_filename, word_count, price, mode,
-                original_score, rewritten_score, status, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)""",
+                original_score, rewritten_score, status, payment_status,
+                created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', 'free', ?, ?)""",
             (user_id, order_id, original_text, rewritten_text,
              original_format, original_filename, word_count, price, mode,
              original_score, rewritten_score, created_at, expires_at)
         )
         conn.commit()
+
+    @classmethod
+    def count_free_rewrites_today(cls, conn, user_id):
+        """统计今天已免费改写的次数（payment_status='free' 的订单）。"""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        row = conn.execute(
+            """SELECT COUNT(*) as cnt FROM orders
+               WHERE user_id = ? AND payment_status = 'free'
+               AND created_at >= ?""",
+            (user_id, today)
+        ).fetchone()
+        return row['cnt'] if row else 0
 
     @classmethod
     def get_by_user_id(cls, conn, user_id, page=1, per_page=10):

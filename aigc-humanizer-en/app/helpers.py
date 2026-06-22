@@ -243,8 +243,7 @@ def do_background_rewrite(order_id, text, mode):
     Runs in a background thread. Creates its own DB connection.
     """
     try:
-        from app.extensions import humanizer_adapter
-        from app.ai_checker import analyze_text
+        from app.extensions import humanizer_adapter, ai_detector as analyze_text
         from app.models import get_connection, Order
 
         humanized = humanizer_adapter.humanize(text, mode=mode)
