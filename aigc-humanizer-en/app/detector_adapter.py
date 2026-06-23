@@ -40,9 +40,16 @@ def _make_api_detect(backend: str):
     这样 generate_modification_suggestions() 不受影响。
     """
     def _detect(text: str) -> dict:
+        import logging
+        _logger = logging.getLogger("detector_adapter")
         api = _api_detect(text, backend=backend)
         if "error" in api:
+            _logger.warning(
+                "API %s failed (%s), falling back to rule_based for %d chars",
+                backend, api.get("error", "unknown"), len(text)
+            )
             return _rule_detect(text)          # API 失败时降级到规则
+        _logger.info("API %s OK, ai_score=%.1f", backend, api.get("ai_score", 0))
         rule = _rule_detect(text)
         rule["ai_score"] = api["ai_score"]
         rule["risk_level"] = api["risk_level"]

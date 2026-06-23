@@ -202,17 +202,29 @@ def analyze_text(text: str, backend: str = "sapling", api_key: str = "") -> dict
             "backend": backend,
         }
 
+    import logging
+    _logger = logging.getLogger("ai_checker_api")
+    _logger.info("Calling %s API — text length=%d, preview=%s...",
+                 backend, len(text), text[:80].replace("\n", " "))
+
     try:
-        return handler(text, key)
+        handler = BACKENDS[backend]
+        result = handler(text, key)
+        _logger.info("API %s succeeded — ai_score=%.1f, word_count=%d",
+                     backend, result.get("ai_score", 0), len(text.split()))
+        return result
     except requests.Timeout:
+        _logger.warning("API %s timeout after 30s", backend)
         err = {"error": f"Timeout from {backend}", "ai_score": 50, "risk_level": "Unknown", "backend": backend}
         _save(text, err)
         return err
     except requests.HTTPError as e:
+        _logger.warning("API %s HTTP error: %d", backend, e.response.status_code)
         err = {"error": f"HTTP {e.response.status_code} from {backend}", "ai_score": 50, "risk_level": "Unknown", "backend": backend}
         _save(text, err)
         return err
     except Exception as e:
+        _logger.error("API %s unexpected error: %s", backend, e)
         err = {"error": f"{backend}: {e}", "ai_score": 50, "risk_level": "Unknown", "backend": backend}
         _save(text, err)
         return err
