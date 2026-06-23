@@ -70,14 +70,10 @@ function closePaymentModal() {
         modal.style.display = 'none';
         document.body.style.overflow = '';
 
-        // Clear polling and QR expiry timers to prevent leaks
+        // Clear polling timer to prevent leaks
         if (pollInterval) {
             clearInterval(pollInterval);
             pollInterval = null;
-        }
-        if (qrExpiryInterval) {
-            clearInterval(qrExpiryInterval);
-            qrExpiryInterval = null;
         }
 
         // Restore default payment UI state
@@ -107,11 +103,9 @@ function showQRLoading() {
 }
 
 /* ========== QR CODE ========== */
-let qrExpiryInterval = null;
-let qrExpirySeconds = 600; // Default 10 minutes
-
 function renderPaymentQR(order, wordCount, price) {
     const qrCode = order.qr_code;
+    const formHtml = order.form_html;
 
     // Update payment modal content
     document.getElementById('pay-word-count').textContent = wordCount + ' 词';
@@ -121,13 +115,11 @@ function renderPaymentQR(order, wordCount, price) {
     const qrSection = document.getElementById('payment-qr-section');
     qrSection.style.display = 'block';
 
+    // ★ P1: 将 mode 存入 data 属性，供 refreshQRCode 读取
+    qrSection.dataset.payMode = order.mode || 'academic';
     // Reset poll status
     document.getElementById('poll-status').innerHTML = '⏳ 等待支付中...';
     document.getElementById('poll-timer').textContent = '';
-
-    // Reset QR expiry timer
-    qrExpirySeconds = order.expires_in || 600;
-    startQRExpiryTimer();
 
     // Hide refresh button initially
     const refreshSection = document.getElementById('qr-refresh-section');
@@ -180,67 +172,81 @@ function renderPaymentQR(order, wordCount, price) {
         }
     }
 
-    // Render QR code using qrcode.js
+    // Render QR code — two methods:
+    // 1. iframe srcdoc (preferred): for qr_pay_mode=4 form_html
+    // 2. qrcode.js (fallback): for qr_pay_mode=1 qr_code string
     const container = document.getElementById('qrcode-container');
-    if (container) {
-        container.innerHTML = '';
-        if (qrCode && typeof QRCode !== 'undefined') {
-            new QRCode(container, {
-                text: qrCode,
-                width: 150,
-                height: 150,
-                colorDark: "#000000",
-                colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.M
-            });
-        } else if (qrCode) {
-            // Fallback if qrcode.js not loaded - show QR string as link
-            container.innerHTML = `<a href="${qrCode}" target="_blank" style="color:var(--primary);font-size:0.85rem;">点击打开支付宝付款</a>`;
-        }
+    if (!container) return;
+
+    container.innerHTML = '';
+    container.style.display = 'flex';
+    container.style.alignItems = 'center';
+    container.style.justifyContent = 'center';
+
+    if (formHtml) {
+        // ★ 方案一：iframe + document.write 写入支付宝表单（qr_pay_mode=4）
+        console.log('[支付宝] 使用 iframe document.write 渲染二维码, HTML长度:', formHtml.length);
+
+        const iframe = document.createElement('iframe');
+        iframe.width = '200';
+        iframe.height = '200';
+        iframe.frameBorder = '0';
+        iframe.scrolling = 'no';
+        iframe.style.border = 'none';
+        iframe.style.overflow = 'hidden';
+        container.appendChild(iframe);
+
+        // 将表单 HTML 写入 iframe 文档
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        doc.open();
+        doc.write(formHtml);
+        doc.close();
+
+        // ★ P4: iframe 自动提交超时检测 — 5秒后 iframe 未导航则显示兜底链接
+        const iframeFallbackTimer = setTimeout(() => {
+            try {
+                // 检查 iframe 当前 URL 是否还是 about:blank 或 srcdoc
+                const currentSrc = iframe.contentWindow?.location?.href || '';
+                if (currentSrc === 'about:blank' || currentSrc.includes('about:srcdoc')) {
+                    console.warn('[支付宝] iframe 表单提交可能被阻止，显示备用链接');
+                    const fallbackLink = document.createElement('a');
+                    fallbackLink.href = '#';
+                    fallbackLink.textContent = '🔗 点击前往支付宝支付';
+                    fallbackLink.style.cssText =
+                        'display:block;margin-top:8px;color:var(--primary);font-size:0.85rem;';
+                    fallbackLink.onclick = (e) => {
+                        e.preventDefault();
+                        // ★ P4(P3): 在新窗口中完整写入 form HTML，自动 POST 提交（非直接打开 action URL）
+                        const win = window.open('', '_blank');
+                        if (win) {
+                            win.document.write(formHtml);
+                            win.document.close();
+                        }
+                    };
+                    container.parentNode?.appendChild(fallbackLink);
+                }
+            } catch (e) {
+                // 跨域安全限制下 contentWindow 不可访问，属于正常情况（已导航到支付宝域名）
+                console.log('[支付宝] iframe 已成功导航到支付宝（跨域）');
+            }
+        }, 5000);
+
+        // iframe 加载表单后自动执行 <script>document.forms[0].submit();</script>
+        // 表单提交后 iframe 自动导航到支付宝网关，展示二维码页面
+    } else if (qrCode && typeof QRCode !== 'undefined') {
+        // ★ 方案二（降级）：qrcode.js 渲染（qr_pay_mode=1 或其他）
+        new QRCode(container, {
+            text: qrCode,
+            width: 150,
+            height: 150,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.M
+        });
+    } else if (qrCode) {
+        // 最差降级：二维码链接
+        container.innerHTML = `<a href="${qrCode}" target="_blank" style="color:var(--primary);font-size:0.85rem;">点击打开支付宝付款</a>`;
     }
-}
-
-function startQRExpiryTimer() {
-    if (qrExpiryInterval) {
-        clearInterval(qrExpiryInterval);
-    }
-
-    const updateTimer = () => {
-        const mm = String(Math.floor(qrExpirySeconds / 60)).padStart(2, '0');
-        const ss = String(qrExpirySeconds % 60).padStart(2, '0');
-
-        const expiryElement = document.getElementById('qr-expiry-timer');
-        if (expiryElement) {
-            if (qrExpirySeconds <= 60) {
-                expiryElement.style.color = '#ef4444';
-                expiryElement.innerHTML = `⏱️ 二维码即将过期: ${mm}:${ss}`;
-            } else {
-                expiryElement.style.color = '';
-                expiryElement.innerHTML = `⏱️ 二维码有效期: ${mm}:${ss}`;
-            }
-        }
-
-        if (qrExpirySeconds <= 0) {
-            clearInterval(qrExpiryInterval);
-            const refreshSection = document.getElementById('qr-refresh-section');
-            if (refreshSection) {
-                refreshSection.style.display = 'block';
-            }
-            const expiryElement = document.getElementById('qr-expiry-timer');
-            if (expiryElement) {
-                expiryElement.innerHTML = '❌ 二维码已过期，请点击下方按钮刷新';
-                expiryElement.style.color = '#ef4444';
-            }
-            if (pollInterval) {
-                clearInterval(pollInterval);
-            }
-        } else {
-            qrExpirySeconds--;
-        }
-    };
-
-    updateTimer();
-    qrExpiryInterval = setInterval(updateTimer, 1000);
 }
 
 async function refreshQRCode() {
@@ -259,7 +265,11 @@ async function refreshQRCode() {
             return;
         }
 
-        await createPaymentOrder(wordCount, price, 'academic');
+        // ★ P1: 从 data 属性读取用户之前选的 mode，避免硬编码丢失
+        const qrSection = document.getElementById('payment-qr-section');
+        const payMode = qrSection ? (qrSection.dataset.payMode || 'academic') : 'academic';
+
+        await createPaymentOrder(wordCount, price, payMode);
 
         showToast('二维码已刷新', 'success');
     } catch (err) {
@@ -276,28 +286,33 @@ async function refreshQRCode() {
 /* ========== PAYMENT POLLING ========== */
 let pollInterval = null;
 let pollCount = 0;
-const MAX_POLL_COUNT = 200; // 10 minutes at 3-second intervals
+const MAX_POLL_COUNT = 600; // ★ P5: 30 minutes (原200=10分钟，但后台改写可能排队)
+const POLL_INTERVAL_MS = 3000;
 
 function startPaymentPolling(orderId) {
     // Clear any existing polling
     if (pollInterval) {
         clearInterval(pollInterval);
-    }
-    pollCount = 0;
+        }
+        pollCount = 0;
 
-    pollInterval = setInterval(async () => {
-        pollCount++;
-        if (pollCount > MAX_POLL_COUNT) {
+        // 倒计时初始值（与支付宝 timeout_express 一致）
+        const TOTAL_TIMEOUT = 600; // 10 minutes in seconds
+
+        pollInterval = setInterval(async () => {
+            pollCount++;
+
+            // 更新倒计时
+            const remaining = Math.max(0, TOTAL_TIMEOUT - pollCount * Math.round(POLL_INTERVAL_MS / 1000));
+            const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
+            const ss = String(remaining % 60).padStart(2, '0');
+            document.getElementById('poll-status').innerHTML = `⏳ 等待支付中 ${mm}:${ss}`;
+
+            if (pollCount > MAX_POLL_COUNT) {
             clearInterval(pollInterval);
-            document.getElementById('poll-status').innerHTML = '⏰ 订单已超时，请重新检测';
+            document.getElementById('poll-status').innerHTML = '⏰ 支付超时，请联系客服';
             return;
         }
-
-        // Update timer display (mm:ss format)
-        const remainingSecs = (MAX_POLL_COUNT - pollCount) * 3;
-        const mm = String(Math.floor(remainingSecs / 60)).padStart(2, '0');
-        const ss = String(remainingSecs % 60).padStart(2, '0');
-        document.getElementById('poll-timer').textContent = `${mm}:${ss}`;
 
         try {
             const resp = await fetch(`/api/payment-status/${orderId}`);

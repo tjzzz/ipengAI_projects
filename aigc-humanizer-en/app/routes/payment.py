@@ -69,15 +69,35 @@ def api_create_payment():
         logging.exception("Failed to create payment order")
         return jsonify({"error": "创建订单失败，请稍后重试"}), 500
 
-    logging.info(f"[PAYMENT] Calling adapter.create_prepay_order for {order_id}")
-    result = adapter.create_prepay_order(
-        order_id, price, f"AI降AI率服务 - {word_count}词"
+    # ★ 优先使用 create_prepay_form()（qr_pay_mode=4 + iframe）
+    #   降级到 create_prepay_order()（qr_pay_mode=1 + qrcode.js）
+    subject = f"AI降AI率服务 - {word_count}词"
+    if hasattr(adapter, 'create_prepay_form'):
+        logging.info(f"[PAYMENT] Calling adapter.create_prepay_form for {order_id}")
+        result = adapter.create_prepay_form(order_id, price, subject)
+        # ★ P2: create_prepay_form 失败时自动降级到 create_prepay_order
+        if result.get('error') and hasattr(adapter, 'create_prepay_order'):
+            logging.warning(
+                f"create_prepay_form failed ({result.get('error')}), "
+                f"falling back to create_prepay_order for {order_id}"
+            )
+            result = adapter.create_prepay_order(order_id, price, subject)
+    else:
+        logging.info(f"[PAYMENT] Calling adapter.create_prepay_order for {order_id}")
+        result = adapter.create_prepay_order(order_id, price, subject)
+
+    form_html = result.get('form_html')
+    qr_code = result.get('qr_code')
+    logging.info(
+        f"[PAYMENT] Adapter result for {order_id}: "
+        f"has_error={bool(result.get('error'))}, "
+        f"has_form_html={bool(form_html)}, "
+        f"has_qr_code={bool(qr_code)}"
     )
-    logging.info(f"[PAYMENT] Adapter result for {order_id}: has_error={bool(result.get('error'))}, has_qr={bool(result.get('qr_code'))}")
 
     if result.get('error'):
         logging.error(
-            f"Payment adapter create_prepay_order failed: "
+            f"Payment adapter create_prepay failed: "
             f"error={result.get('error')}, "
             f"code={result.get('code')}, "
             f"sub_code={result.get('sub_code')}, "
@@ -85,7 +105,6 @@ def api_create_payment():
         )
         return jsonify({"error": result['error']}), 500
 
-    qr_code = result.get('qr_code')
     if qr_code:
         Order.save_qr_code(conn, order_id, qr_code)
 
@@ -95,6 +114,7 @@ def api_create_payment():
             "order_id": order_id,
             "word_count": word_count,
             "price": price,
+            "form_html": form_html,
             "qr_code": qr_code,
             "mode": mode,
             "expires_in": result.get('expires_in', 600)

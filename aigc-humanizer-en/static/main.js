@@ -134,7 +134,7 @@ async function handleAnalyzeResponse(data) {
 
     // Pre-create payment order for logged-in paid users so QR is ready instantly
     if (currentUser && price > 0) {
-        precreatePaymentOrder(wordCount, price, 'academic');
+        precreatePaymentOrder(wordCount, price, data.mode || 'academic');
     }
 }
 

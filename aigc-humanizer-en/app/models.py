@@ -284,8 +284,9 @@ class Order:
         conn.commit()
 
     @classmethod
-    def expire_old_orders(cls, conn, max_age_minutes=30):
-        """Mark orders as expired if payment pending for too long."""
+    def expire_old_orders(cls, conn, max_age_minutes=10):
+        """Mark orders as expired if payment pending for too long.
+        10 分钟 = 与支付宝 timeout_express 和前端 QR 过期时间保持一致（P6）"""
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
         conn.execute(
             """UPDATE orders 

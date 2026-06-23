@@ -83,6 +83,28 @@ class MockPaymentAdapter(PaymentAdapter):
             "status": "pending"
         }
 
+    def create_prepay_form(self, order_id, amount, description, **kwargs):
+        """
+        Mock form_html for iframe mode testing.
+        Returns a mock form HTML that mimics the real Alipay form structure.
+        """
+        mock_form = (
+            f'<form name="punchout_form" method="post" '
+            f'action="https://mock.alipay.com/gateway.do?method=mock">\n'
+            f'<input type="hidden" name="biz_content" '
+            f'value=\'{{"out_trade_no":"{order_id}"}}\'>\n'
+            f'<input type="submit" value="立即支付" style="display:none" >\n'
+            f'</form>\n'
+            f'<script>document.forms[0].submit();</script>'
+        )
+        return {
+            "form_html": mock_form,
+            "order_id": order_id,
+            "amount": amount,
+            "method": "mock",
+            "expires_in": 600
+        }
+
 
 class AlipayPaymentAdapter(PaymentAdapter):
     """
@@ -250,7 +272,11 @@ class AlipayPaymentAdapter(PaymentAdapter):
 
     def create_prepay_order(self, order_id, amount, description, **kwargs):
         """
-        Call alipay.trade.precreate to get QR code for scanning.
+        Call alipay.trade.page.pay with qr_pay_mode=1 to get QR code.
+
+        电脑网站支付 + 二维码前置模式：
+        qr_pay_mode=1 让支付宝在响应中直接返回 qr_code，
+        用户扫二维码即可支付，无需跳转到支付宝页面。
 
         Returns:
             dict with qr_code, order_id, amount, expires_in
@@ -266,19 +292,23 @@ class AlipayPaymentAdapter(PaymentAdapter):
             }
 
         try:
-            from alipay.aop.api.request.AlipayTradePrecreateRequest import AlipayTradePrecreateRequest
-            from alipay.aop.api.domain.AlipayTradePrecreateModel import AlipayTradePrecreateModel
+            from alipay.aop.api.request.AlipayTradePagePayRequest import AlipayTradePagePayRequest
+            from alipay.aop.api.domain.AlipayTradePagePayModel import AlipayTradePagePayModel
 
-            model = AlipayTradePrecreateModel()
+            model = AlipayTradePagePayModel()
             model.out_trade_no = order_id
             model.total_amount = str(amount)
             model.subject = description or "AI降AI率服务"
             model.timeout_express = "10m"
+            # 支付宝电脑网站支付
+            model.product_code = "FAST_INSTANT_TRADE_PAY"
+            # 二维码前置 — 支付宝直接返回 qr_code，用户扫码支付
+            model.qr_pay_mode = "1"
             # Pass seller_id (PID) so Alipay knows which account receives the payment
             if self.pid:
                 model.seller_id = self.pid
 
-            request = AlipayTradePrecreateRequest(biz_model=model)
+            request = AlipayTradePagePayRequest(biz_model=model)
             # ⚠️ CRITICAL: notify_url must be set on the request, not just in config
             if self.notify_url:
                 request.notify_url = self.notify_url
@@ -296,7 +326,7 @@ class AlipayPaymentAdapter(PaymentAdapter):
                 return {"error": "支付宝接口返回异常，请稍后重试", "order_id": order_id}
 
             # Debug: log full response for troubleshooting
-            logger.info(f"Alipay precreate response: {json.dumps(response, ensure_ascii=False)[:1000]}")
+            logger.info(f"Alipay page.pay response: {json.dumps(response, ensure_ascii=False)[:1000]}")
 
             # Check for error_response (Alipay returns this for auth/validation errors)
             error_response = response.get("error_response")
@@ -306,7 +336,7 @@ class AlipayPaymentAdapter(PaymentAdapter):
                 code = error_response.get("code", "")
                 msg = error_response.get("msg", "创建订单失败")
                 logger.error(
-                    f"Alipay precreate error_response: code={code}, "
+                    f"Alipay page.pay error_response: code={code}, "
                     f"sub_code={sub_code}, msg={msg}, sub_msg={sub_msg}"
                 )
                 return {
@@ -317,8 +347,8 @@ class AlipayPaymentAdapter(PaymentAdapter):
                 }
 
             # The SDK's __parse_response returns the INNER content (without
-            # the "alipay_trade_precreate_response" wrapper), so check both.
-            inner = response.get("alipay_trade_precreate_response") or response
+            # the "alipay_trade_page_pay_response" wrapper), so check both.
+            inner = response.get("alipay_trade_page_pay_response") or response
             response_code = inner.get("code")
 
             if response_code == "10000":
@@ -335,7 +365,7 @@ class AlipayPaymentAdapter(PaymentAdapter):
                 sub_msg = inner.get("sub_msg", "")
                 msg = inner.get("msg", "创建订单失败")
                 logger.error(
-                    f"Alipay precreate failed: code={response_code}, "
+                    f"Alipay page.pay failed: code={response_code}, "
                     f"sub_code={sub_code}, msg={msg}, sub_msg={sub_msg}"
                 )
                 return {
@@ -362,6 +392,70 @@ class AlipayPaymentAdapter(PaymentAdapter):
             else:
                 logger.exception("Alipay precreate exception")
             return {"error": err_msg, "order_id": order_id}
+
+    def create_prepay_form(self, order_id, amount, description, **kwargs):
+        """
+        Use page_execute("POST") to generate an HTML form for iframe embedding.
+        qr_pay_mode=4: 可定义宽度的嵌入式二维码（仅显示二维码图片，无其他UI）。
+
+        Unlike create_prepay_order (which calls execute() — a real HTTP request),
+        page_execute("POST") does NOT make an HTTP request.
+        It only assembles the signed form HTML locally.
+
+        Returns:
+            dict with form_html, order_id, amount, method, expires_in
+        """
+        if not self._sdk_available:
+            logger.warning("Alipay SDK not available, returning mock form")
+            return {
+                "form_html": f'<div style="padding:40px;text-align:center;">Mock Alipay QR for {order_id}</div>',
+                "order_id": order_id,
+                "amount": amount,
+                "method": "alipay_mock",
+                "expires_in": 600
+            }
+
+        try:
+            from alipay.aop.api.request.AlipayTradePagePayRequest import AlipayTradePagePayRequest
+            from alipay.aop.api.domain.AlipayTradePagePayModel import AlipayTradePagePayModel
+
+            model = AlipayTradePagePayModel()
+            model.out_trade_no = order_id
+            model.total_amount = str(amount)
+            model.subject = description or "AI降AI率服务"
+            model.timeout_express = "10m"
+            # 支付宝电脑网站支付(product_code必填)
+            model.product_code = "FAST_INSTANT_TRADE_PAY"
+            # 仅显示二维码图片（无支付宝登录/账号表单 UI）
+            model.qr_pay_mode = "4"
+            model.qrcode_width = "200"
+            if self.pid:
+                model.seller_id = self.pid
+
+            request = AlipayTradePagePayRequest(biz_model=model)
+            if self.notify_url:
+                request.notify_url = self.notify_url
+
+            # page_execute("POST") 不发起 HTTP 请求，仅生成表单 HTML
+            form_html = self.client.page_execute(request, "POST")
+
+            logger.info(
+                f"Alipay pageExecute success for {order_id}, "
+                f"form_html length={len(form_html)}, "
+                f"preview={form_html[:300]}"
+            )
+
+            return {
+                "form_html": form_html,
+                "order_id": order_id,
+                "amount": amount,
+                "method": "alipay",
+                "expires_in": 600
+            }
+
+        except Exception as e:
+            logger.exception("Alipay pageExecute exception")
+            return {"error": f"支付宝页面请求失败: {str(e)[:200]}", "order_id": order_id}
 
     def verify_notification(self, params, signature=None):
         """
@@ -475,11 +569,26 @@ class AlipayPaymentAdapter(PaymentAdapter):
                     "raw_response": response
                 }
             else:
+                sub_code = alipay_trade_query_response.get("sub_code", "")
                 sub_msg = alipay_trade_query_response.get("sub_msg", "")
                 msg = alipay_trade_query_response.get("msg", "")
+
+                # ★ 交易不存在 — 使用 page_execute 时属于正常情况
+                #   （表单尚未提交到支付宝网关），当作 pending 而非 error
+                if sub_code == "ACQ.TRADE_NOT_EXIST":
+                    logger.info(
+                        f"Alipay trade query for {order_id}: "
+                        f"交易不存在（正常 — page_execute 模式，交易尚未提交）"
+                    )
+                    return {
+                        "order_id": order_id,
+                        "trade_status": "WAIT_BUYER_PAY",
+                        "status": "pending",
+                    }
+
                 logger.warning(
                     f"Alipay trade query failed for {order_id}: "
-                    f"code={response_code}, msg={msg}, sub_msg={sub_msg}"
+                    f"code={response_code}, sub_code={sub_code}, msg={msg}, sub_msg={sub_msg}"
                 )
                 return {
                     "order_id": order_id,
