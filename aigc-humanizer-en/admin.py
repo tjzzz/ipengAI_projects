@@ -774,4 +774,4 @@ if __name__ == '__main__':
     print(f"\n  🔐 Admin dashboard → http://127.0.0.1:{ADMIN_PORT}/admin")
     print(f"  📁 Database: {DB_PATH}")
     print(f"  🔑 Login:  http://127.0.0.1:{ADMIN_PORT}/admin/login\n")
-    admin_app.run(host='127.0.0.1', port=ADMIN_PORT, debug=True)
+    admin_app.run(host='0.0.0.0', port=ADMIN_PORT, debug=True)

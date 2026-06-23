@@ -49,6 +49,9 @@ def create_app():
     app.config['PAYMENT_ADAPTER'] = PAYMENT_ADAPTER
     app.config['HUMANIZER_ADAPTER'] = HUMANIZER_ADAPTER
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2)
+    # Disable SSL strict referrer check (Flask-WTF 1.3+ default), which can
+    # falsely reject valid requests behind HTTPS reverse proxies (nginx, CDN).
+    app.config['WTF_CSRF_SSL_STRICT'] = False
 
     # ── Filesystem session ──
     from app.session import FileSystemSessionInterface
@@ -161,10 +164,15 @@ def create_app():
 
     # ── CSRF Exemptions ──
     # All API routes receive CSRF protection via X-CSRFToken header from the
-    # frontend (_csrfFetch in common.js). Only the Alipay webhook is exempted
-    # because Alipay's servers cannot send our CSRF token.
+    # frontend (_csrfFetch in common.js). The Alipay webhook is exempted
+    # because Alipay's servers cannot send our CSRF token. The public analysis
+    # endpoints are also exempted so that non-logged-in users can use the
+    # core detection feature without needing a server-side session match.
     _csrf_exempt_routes = [
         'payment.api_webhook_alipay',
+        'analysis.api_analyze',
+        'analysis.api_preview_rewrite',
+        'analysis.api_suggestion_detail',
     ]
     for _route in _csrf_exempt_routes:
         _func = app.view_functions.get(_route)
