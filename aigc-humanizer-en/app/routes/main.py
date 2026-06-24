@@ -2,20 +2,29 @@
 Main page routes — index, orders page, health check, SEO.
 """
 
-from flask import Blueprint, render_template, session, jsonify, make_response
+from flask import Blueprint, render_template, session, jsonify, make_response, request
 from datetime import datetime, timezone
 
 main_bp = Blueprint('main', __name__)
 
-SITE_URL = 'https://ipengai.cn'
+
+def _site_url():
+    """Return the canonical site URL based on the incoming request host.
+
+    The app is served behind nginx with HTTPS-only public access, so we
+    always use https:// regardless of the internal scheme between nginx
+    and the Flask process.
+    """
+    return f"https://{request.host}"
 
 
 @main_bp.route('/robots.txt')
 def robots_txt():
     """Allow all crawlers, point to sitemap."""
+    site_url = _site_url()
     resp = make_response(f"""User-agent: *
 Allow: /
-Sitemap: {SITE_URL}/sitemap.xml
+Sitemap: {site_url}/sitemap.xml
 """)
     resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
     return resp
@@ -24,9 +33,10 @@ Sitemap: {SITE_URL}/sitemap.xml
 @main_bp.route('/sitemap.xml')
 def sitemap_xml():
     """Simple sitemap listing all public pages."""
+    site_url = _site_url()
     pages = [
-        {'loc': SITE_URL + '/', 'priority': '1.0'},
-        {'loc': SITE_URL + '/orders', 'priority': '0.3'},
+        {'loc': site_url + '/', 'priority': '1.0'},
+        {'loc': site_url + '/orders', 'priority': '0.3'},
     ]
     urls = '\n'.join(
         f"""  <url>\n    <loc>{p['loc']}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>{p['priority']}</priority>\n  </url>"""
