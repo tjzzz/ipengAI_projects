@@ -1,0 +1,36 @@
+# ============================================================
+# AI Humanizer .gitignore
+# 策略：黑名单 — 只忽略不需要推送的文件/文件夹
+# ============================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 虚拟环境
+venv/
+.venv/
+
+# 数据库（敏感数据）
+instance/
+deliverables/
+brand/
+preview/
+
+
+# 用户上传文件
+uploads/
+
+# 配置（含密钥）
+config.py
+
+# 工作记忆 / 调试
+.workbuddy/
+.codebuddy/
+.obsidian/
+.gstack/
+test/
+
+# 日志（API 调用记录、检测结果等）
+logs/
