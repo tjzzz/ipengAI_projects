@@ -3,9 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Humanizer - AI辅助英文写作，让论文更自然</title>
+    <title>Huma - AI辅助英文写作，让论文更自然</title>
+    <meta name="description" content="Huma 是一款英文 AI 检测与降 AI 率工具，帮助留学生检测论文 AI 率并改写润色，轻松通过 Turnitin、GPTZero 等检测。免费试用 200 词。">
+    <meta name="keywords" content="AI检测,降AI率,论文改写,Turnitin检测,英文润色,AI Humanizer,学术写作">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://ipengai.cn/">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Huma - AI辅助英文写作，让论文更自然">
+    <meta property="og:description" content="检测论文 AI 率并精准改写，轻松通过 Turnitin、GPTZero。免费试用 200 词。">
+    <meta property="og:url" content="https://ipengai.cn/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Huma">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Huma - AI辅助英文写作，让论文更自然">
+    <meta name="twitter:description" content="检测论文 AI 率并精准改写，轻松通过 Turnitin、GPTZero。">
+
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='Inter,sans-serif' font-weight='800' font-size='18' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='Inter,sans-serif' font-weight='800' font-size='18' fill='white' text-anchor='middle'%3EH%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,8 +32,21 @@
     <nav class="navbar">
         <div class="container nav-container">
             <a href="/" class="logo">
-                <span class="logo-icon">✦</span>
-                <span class="logo-text">AI Humanizer</span>
+                <span class="logo-monogram">
+                    <svg viewBox="0 0 38 38" fill="none">
+                        <rect x="2" y="2" width="34" height="34" rx="10" fill="url(#h-grad)"/>
+                        <rect x="10" y="9" width="4" height="20" rx="2" fill="white"/>
+                        <rect x="24" y="9" width="4" height="20" rx="2" fill="white"/>
+                        <rect x="10" y="17" width="18" height="4" rx="2" fill="white"/>
+                        <defs>
+                            <linearGradient id="h-grad" x1="0" y1="0" x2="38" y2="38">
+                                <stop offset="0%" stop-color="#4f46e5"/>
+                                <stop offset="100%" stop-color="#06b6d4"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </span>
+                <span class="logo-word">Huma</span>
             </a>
             <button class="menu-toggle" id="menuToggle" aria-label="菜单" onclick="toggleMenu()">
                 <span class="menu-bar"></span>
@@ -41,11 +71,11 @@
         <div class="container">
             <div class="hero-grid">
                 <div class="hero-content">
-                    <div class="hero-badge">🔥 基于 Turnitin 检测算法</div>
-                    <h1 class="hero-title">
-                        <span class="gradient-text">AI辅助英文写作</span><br>
-                        让论文更自然
-                    </h1>
+                    <div class="hero-tag">✦ AI辅助英文写作工具</div>
+                    <div class="hero-mono">
+                        <span class="huma-h">H</span><span class="huma-uma">uma</span>
+                    </div>
+                    <div class="hero-tagline">让论文更自然，轻松通过检测</div>
                     <p class="hero-subtitle">
                         上传英文论文或粘贴文字，一键检测 AI 率。精准改写、保留原意，<br>
                         轻松通过 Turnitin、GPTZero 等主流检测平台。
@@ -160,7 +190,6 @@
                     <button class="btn btn-primary" id="rewrite-btn" aria-label="自动改写降低AI率">
                         <span id="rewrite-btn-text">✨ 自动改写降低 AI 率</span>
                     </button>
-                    <button class="btn btn-outline" onclick="resetAnalysis()" aria-label="重新检测">重新检测</button>
                 </div>
             </div>
 
@@ -194,7 +223,7 @@
                                 <span id="pay-word-count">0 词</span>
                             </div>
                             <div class="payment-row ai-score-row">
-                                <span>AI 率</span>
+                                <span>预估 AI 率</span>
                                 <span id="ai-score-display" class="ai-score-value">0%</span>
                             </div>
                             <div class="payment-row total">
@@ -356,7 +385,6 @@
             <div class="rewrite-actions">
                 <button class="btn btn-primary" onclick="copyResult()">📋 复制改写结果</button>
                 <button class="btn btn-outline" id="download-btn" onclick="downloadResult()">⬇️ 下载</button>
-                <button class="btn btn-outline" onclick="resetAll()">重新检测</button>
             </div>
         </div>
     </section>
@@ -364,7 +392,7 @@
     <!-- ============ FEATURES ============ -->
     <section class="section features" id="features">
         <div class="container">
-            <h2 class="section-heading">为什么选择 <span class="gradient-text">AI Humanizer</span></h2>
+            <h2 class="section-heading">为什么选择 <span class="gradient-text">Huma</span></h2>
             <p class="section-sub">基于 AI 检测算法，精准识别并改写 AI 文本特征</p>
             <div class="features-grid">
                 <div class="feature-card">
@@ -453,13 +481,13 @@
             <div class="faq-list">
                 <div class="faq-item">
                     <button class="faq-question">
-                        <span>AI Humanizer 检测准确率高吗？</span>
+                        <span>Huma 检测准确率高吗？</span>
                         <svg class="faq-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="6 9 12 15 18 9"/>
                         </svg>
                     </button>
                     <div class="faq-answer">
-                        <p>AI Humanizer 采用与 Turnitin 类似的检测算法，综合评估文本的困惑度、突发性、AI 模式识别等多个维度。我们的模型经过优化校准，超过 10 万篇测试文本验证，检测准确率在 85% 以上。但请注意，任何工具都无法 100% 替代官方检测平台的判定结果。</p>
+                        <p>Huma 采用与 Turnitin 类似的检测算法，综合评估文本的困惑度、突发性、AI 模式识别等多个维度。我们的模型经过优化校准，超过 10 万篇测试文本验证，检测准确率在 85% 以上。但请注意，任何工具都无法 100% 替代官方检测平台的判定结果。</p>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -515,7 +543,7 @@
         <div class="container">
             <div class="footer-content">
                 <div class="footer-brand">
-                    <span class="logo-text">AI Humanizer</span>
+                    <span class="logo-word" style="font-size:1.2rem;font-weight:700;">Huma</span>
                     <p>降低 AI 检测率，让论文更自然</p>
                 </div>
                 <div class="footer-links">
@@ -531,7 +559,7 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; <span id="copyright-year">2026</span> AI Humanizer. All rights reserved. &nbsp;|&nbsp; <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">京ICP备2026033653号</a></p>
+                <p>&copy; <span id="copyright-year">2026</span> Huma. All rights reserved. &nbsp;|&nbsp; <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">京ICP备2026033653号</a> &nbsp;|&nbsp; <a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=11011402056292" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;"><svg viewBox="0 0 20 20" width="14" height="14" style="vertical-align:-2px;margin-right:3px;" fill="currentColor"><path d="M10 1L2 4v5c0 4.5 3 8.7 8 10 5-1.3 8-5.5 8-10V4l-8-3zm0 2.1l5.6 2.1V9c0 3.3-2.4 6.5-5.6 7.7V3.1z"/></svg>京公网安备11011402056292号</a></p>
             </div>
         </div>
     </footer>
