@@ -34,12 +34,13 @@ Sitemap: {site_url}/sitemap.xml
 def sitemap_xml():
     """Simple sitemap listing all public pages."""
     site_url = _site_url()
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     pages = [
-        {'loc': site_url + '/', 'priority': '1.0'},
-        {'loc': site_url + '/orders', 'priority': '0.3'},
+        {'loc': site_url + '/', 'lastmod': today, 'changefreq': 'weekly', 'priority': '1.0'},
+        {'loc': site_url + '/orders', 'lastmod': today, 'changefreq': 'weekly', 'priority': '0.3'},
     ]
     urls = '\n'.join(
-        f"""  <url>\n    <loc>{p['loc']}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>{p['priority']}</priority>\n  </url>"""
+        f"""  <url>\n    <loc>{p['loc']}</loc>\n    <lastmod>{p['lastmod']}</lastmod>\n    <changefreq>{p['changefreq']}</changefreq>\n    <priority>{p['priority']}</priority>\n  </url>"""
         for p in pages
     )
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
