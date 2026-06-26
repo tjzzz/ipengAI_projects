@@ -59,6 +59,8 @@ if (uploadForm) {
 }
 
 async function analyzeText() {
+    // Baidu Tongji: track analysis start
+    if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'engagement', 'analyze_start']);
     showLoading();
 
     try {
@@ -132,6 +134,9 @@ async function handleAnalyzeResponse(data) {
     updateRewriteButton(wordCount, price);
     scrollToResults();
 
+    // Baidu Tongji: track analysis complete
+    if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'engagement', 'analyze_complete', '', aiScore]);
+
     // Pre-create payment order for logged-in paid users so QR is ready instantly
     if (currentUser && price > 0) {
         precreatePaymentOrder(wordCount, price, data.mode || 'academic');
@@ -181,6 +186,8 @@ function updateRewriteButton(wordCount, price) {
     if (!currentUser) {
         btnText.textContent = isFree ? '✨ 登录后可免费改写' : '✨ 付费改写 ¥' + price.toFixed(2);
         btn.addEventListener('click', () => {
+            // Baidu Tongji: track rewrite button click (not logged in)
+            if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'engagement', 'rewrite_click', 'not_logged_in']);
             if (isFree) {
                 sessionStorage.setItem('pendingFreeRewrite', 'true');
             } else {
@@ -194,7 +201,11 @@ function updateRewriteButton(wordCount, price) {
         }, { signal });
     } else if (isFree) {
         btnText.textContent = '✨ 免费改写';
-        btn.addEventListener('click', handleFreeRewrite, { signal });
+        btn.addEventListener('click', () => {
+            // Baidu Tongji: track free rewrite click
+            if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'engagement', 'rewrite_click', 'free']);
+            handleFreeRewrite();
+        }, { signal });
     } else {
         btnText.textContent = '✨ 付费改写 ¥' + price.toFixed(2);
         btn.addEventListener('click', () => {
@@ -251,6 +262,9 @@ async function handleFreeRewrite() {
         // Show rewrite result
         displayRewriteResult(data);
         showToast('改写完成！', 'success');
+
+        // Baidu Tongji: track free rewrite complete
+        if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'engagement', 'rewrite_complete', 'free']);
     } catch (err) {
         hideLoading();
         showToast(getNetworkErrorMessage(err), 'error');

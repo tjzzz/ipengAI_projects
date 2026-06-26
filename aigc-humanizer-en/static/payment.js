@@ -334,6 +334,12 @@ function startPaymentPolling(orderId) {
                 closePaymentModal();
                 displayRewriteResult(data);
                 showToast('改写完成！', 'success');
+
+                // Baidu Tongji: track payment success + rewrite complete
+                if (typeof _hmt !== 'undefined') {
+                    _hmt.push(['_trackEvent', 'ecommerce', 'payment_success', '', data.price || 0]);
+                    _hmt.push(['_trackEvent', 'engagement', 'rewrite_complete']);
+                }
             }
 
             if (data.status === 'failed') {
@@ -394,6 +400,9 @@ async function createPaymentOrder(wordCount, price, mode = 'academic') {
 
         // Start polling for payment status
         startPaymentPolling(data.order.order_id);
+
+        // Baidu Tongji: track payment start
+        if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'ecommerce', 'payment_start', '', price]);
 
     } catch (err) {
         showToast(getNetworkErrorMessage(err), 'error');

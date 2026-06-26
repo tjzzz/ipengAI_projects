@@ -133,6 +133,9 @@ async function handleLogin() {
         closeAuthModal();
         showToast(`欢迎回来，${currentUser.email}`, 'success');
 
+        // Baidu Tongji: track login success
+        if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'user', 'login_success']);
+
         // Check for pending free rewrite after login
         const pendingFree = sessionStorage.getItem('pendingFreeRewrite');
         if (pendingFree) {
@@ -222,6 +225,9 @@ async function handleRegister() {
         updateNavbar(currentUser);
         closeAuthModal();
         showToast(`注册成功！欢迎，${currentUser.email}`, 'success');
+
+        // Baidu Tongji: track register success
+        if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'user', 'register_success']);
 
         // Check for pending free rewrite after register
         const pendingFree = sessionStorage.getItem('pendingFreeRewrite');
