@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>降AI率实测：从78%到12%的全流程 — 芃芃工作室</title>
+  <meta name="description" content="降AI率实测：从78%到12%的全流程">
+  <meta name="keywords" content="留学生,降AI,实测">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --green: #10B981;
+      --blue: #3B82F6;
+      --purple: #8B5CF6;
+      --brand-grad: linear-gradient(135deg, #10B981, #3B82F6, #8B5CF6);
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-300: #cbd5e1;
+      --gray-400: #94a3b8;
+      --gray-500: #64748b;
+      --gray-600: #475569;
+      --gray-700: #334155;
+      --gray-800: #1e293b;
+      --gray-900: #0f172a;
+      --white: #ffffff;
+    }
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-600);
+      line-height: 1.8;
+    }
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    img { max-width: 100%; }
+    .nav-bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 56px;
+      display: flex; align-items: center;
+      background: rgba(255,255,255,0.85); backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .nav-bar .inner {
+      max-width: 720px; margin: 0 auto; padding: 0 24px; width: 100%;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-bar .brand { font-weight: 700; font-size: 0.95rem; color: var(--gray-800); display: flex; align-items: center; gap: 8px; }
+    .nav-bar .brand .logo-mark { width: 28px; height: 28px; border-radius: 6px; background: var(--brand-grad); display: flex; align-items: center; justify-content: center; color: var(--white); font-size: 15px; font-weight: 700; }
+    .nav-bar .back-link { font-size: 0.85rem; color: var(--gray-400); display: flex; align-items: center; gap: 4px; transition: color 0.2s; }
+    .nav-bar .back-link:hover { color: var(--green); text-decoration: none; }
+    .article-wrap { max-width: 960px; margin: 0 auto; padding: 100px 24px 80px; display: flex; gap: 48px; align-items: flex-start; }
+    .article-main { flex: 1; min-width: 0; max-width: 720px; }
+    .article-header { margin-bottom: 48px; }
+    .article-header .tag-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .article-header .tag { padding: 3px 12px; background: rgba(16,185,129,0.08); color: var(--green); border-radius: 6px; font-size: 0.78rem; font-weight: 500; }
+    .article-header h1 { font-size: 2rem; font-weight: 700; line-height: 1.3; color: var(--gray-900); margin-bottom: 16px; letter-spacing: -0.01em; }
+    .article-header .meta { display: flex; align-items: center; gap: 16px; font-size: 0.85rem; color: var(--gray-400); }
+    .article-header .meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--gray-300); }
+    .article-body { background: var(--white); border-radius: 16px; padding: 48px 48px; border: 1px solid var(--gray-200); font-size: 1rem; line-height: 1.9; color: var(--gray-600); }
+    .article-body h2 { font-size: 1.45rem; font-weight: 700; color: var(--gray-800); margin-top: 44px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--gray-100); }
+    .article-body h3 { font-size: 1.1rem; font-weight: 600; color: var(--gray-800); margin-top: 32px; margin-bottom: 12px; }
+    .article-body p { margin-bottom: 20px; }
+    .article-body strong { color: var(--gray-800); font-weight: 600; }
+    .article-body ul, .article-body ol { margin-bottom: 20px; padding-left: 24px; }
+    .article-body li { margin-bottom: 8px; }
+    .article-body code { font-family: "SF Mono", "Fira Code", "Fira Mono", monospace; font-size: 0.88em; background: var(--gray-100); padding: 2px 8px; border-radius: 4px; color: var(--gray-700); }
+    .article-body pre { background: var(--gray-900); color: #e2e8f0; border-radius: 12px; padding: 24px; overflow-x: auto; margin-bottom: 24px; font-size: 0.88rem; line-height: 1.6; }
+    .article-body pre code { background: none; padding: 0; color: inherit; }
+    .article-body blockquote { border-left: 3px solid var(--green); padding: 12px 20px; margin-bottom: 20px; background: rgba(16,185,129,0.04); border-radius: 0 8px 8px 0; color: var(--gray-600); font-style: normal; }
+    .article-body blockquote p { margin-bottom: 0; }
+    .article-body hr { border: none; border-top: 1px solid var(--gray-200); margin: 40px 0; }
+    .article-body table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 0.92rem; }
+    .article-body th, .article-body td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--gray-200); }
+    .article-body th { font-weight: 600; color: var(--gray-800); background: var(--gray-50); }
+    .highlight-box { background: linear-gradient(135deg, rgba(16,185,129,0.04), rgba(59,130,246,0.04)); border: 1px solid rgba(16,185,129,0.12); border-radius: 12px; padding: 24px 28px; margin-bottom: 24px; }
+    .highlight-box p { margin-bottom: 0; }
+    .article-footer { margin-top: 48px; text-align: center; padding-top: 32px; border-top: 1px solid var(--gray-200); }
+    .article-footer p { font-size: 0.88rem; color: var(--gray-400); }
+    .article-footer .back-home { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 10px 24px; border-radius: 8px; border: 1px solid var(--gray-200); font-size: 0.88rem; font-weight: 500; color: var(--gray-500); transition: all 0.3s; }
+    .article-footer .back-home:hover { border-color: var(--green); color: var(--green); text-decoration: none; box-shadow: 0 4px 12px rgba(16,185,129,0.1); }
+    .toc-sidebar { width: 170px; flex-shrink: 0; position: sticky; top: 80px; max-height: calc(100vh - 120px); overflow-y: auto; padding-top: 4px; opacity: 0; transition: opacity 0.4s ease; }
+    .toc-sidebar.visible { opacity: 1; }
+    .toc-inner { border-left: 2px solid var(--gray-200); padding: 4px 0 4px 16px; }
+    .toc-label { font-size: 0.72rem; font-weight: 600; color: var(--gray-400); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
+    .toc-list { list-style: none; padding: 0; margin: 0; }
+    .toc-list li { margin-bottom: 6px; line-height: 1.4; }
+    .toc-list a { display: block; font-size: 0.8rem; color: var(--gray-400); padding: 3px 0; transition: color 0.2s, border-color 0.2s; border-left: 2px solid transparent; margin-left: -18px; padding-left: 16px; text-decoration: none; }
+    .toc-list a:hover { color: var(--gray-600); }
+    .toc-list a.active { color: var(--green); border-left-color: var(--green); }
+    .toc-list .toc-h3 a { padding-left: 28px; font-size: 0.76rem; }
+    .toc-list .toc-h3 a.active { border-left-color: var(--green); }
+    .article-body ul li strong { color: var(--gray-800); }
+    @media (max-width: 1024px) { .article-wrap { flex-direction: column; gap: 0; } .toc-sidebar { display: none; } .article-main { max-width: 100%; } }
+    @media (max-width: 600px) { .article-body { padding: 28px 20px; border-radius: 12px; } .article-header h1 { font-size: 1.5rem; } }
+  </style>
+</head>
+<body>
+  <nav class="nav-bar">
+    <div class="inner">
+      <a href="../index.html" class="brand"><span class="logo-mark">芃</span>芃芃工作室</a>
+      <a href="../index.html#writing" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        返回专栏
+      </a>
+    </div>
+  </nav>
+  <article class="article-wrap">
+    <nav class="toc-sidebar" id="tocSidebar">
+      <div class="toc-inner">
+        <div class="toc-label">目录</div>
+        <ul class="toc-list" id="tocList"></ul>
+      </div>
+    </nav>
+    <div class="article-main">
+      <header class="article-header">
+        <div class="tag-row"><span class="tag">留学生</span><span class="tag">降AI</span><span class="tag">实测</span></div>
+        <h1>降AI率实测：从78%到12%的全流程</h1>
+        <div class="meta">
+          <span>zzzheng</span>
+          <span class="dot"></span>
+          <span>2026 年 7 月</span>
+          <span class="dot"></span>
+          <span>约 1322 字</span>
+        </div>
+      </header>
+      <div class="article-body">
+        <h1>降AI率实测：从78%到12%的全流程</h1>
+<hr />
+<h2>你的AI率为什么降不下来？</h2>
+<p>写论文用AI辅助已经不是什么新鲜事了。但提交前查AI率——70%、80%、甚至90%——是几乎每个人都会遇到的问题。</p>
+<p>你可能试过：</p>
+<ul>
+<li><strong>同义词替换</strong>：把"重要的"改成"关键的"，AI率没怎么变</li>
+<li><strong>手动改写</strong>：花2-3小时逐段改措辞，改完确实降了，但下一篇文章还是同样的流程</li>
+<li><strong>免费工具</strong>：效果不稳定，有时候改完逻辑都碎了</li>
+<li><strong>付费工具</strong>：月费几十美金，效果好的确实有，但肉疼</li>
+</ul>
+<p>我试了上面所有方法，最后决定自己写一个工具。</p>
+<p>这篇文章不是工具推广文，而是把我从"AI率78%降到12%"的完整流程拆开给你看，包括每一步的原理和实际操作。</p>
+<hr />
+<h2>第一步：搞清检测器在查什么</h2>
+<p>降AI率的第一步，不是找工具，是搞清楚检测器到底在查什么。</p>
+<p>主流的AI检测器（Turnitin、GPTZero、Originality.ai）通常从三个维度判断：</p>
+<p><strong>1. 词汇分布模式</strong>
+人类写作用词更分散。同一个意思，人类会用5-6种不同方式表达；AI倾向于反复用同一套高频词搭配。检测器统计全文词汇分布的"集中度"，集中度越高，AI概率越大。</p>
+<p><strong>2. 句式结构规律</strong>
+人类写文章，长短句交替，偶尔会有语法不完美的自然表达。AI生成的内容句式结构更规律——平均句长接近、主谓宾结构标准、从句使用均匀。</p>
+<p><strong>3. 语义连贯性</strong>
+这个是最近升级的重点。新版本的检测器不再只看单个句子，而是分析段落之间的逻辑跳转。人类写作的段落过渡有"信息增量"——后一段不是前一段的简单重复；AI生成的内容容易出现同义反复。</p>
+<p><strong>知道这三点，降AI的思路就清楚了</strong>：不是"把词改掉"，而是"让文本更接近人类的写作模式"。</p>
+<hr />
+<h2>第二步：我的降AI流程（附实测数据）</h2>
+<p>以下是我实测从78%降到12%的完整操作流程。</p>
+<h3>原始文本</h3>
+<p>一篇约2000词的英文技术分析报告，AI检测结果：<strong>78%</strong></p>
+<h3>关键操作一：句式重组</h3>
+<p>不是改单词，是重新组织句子结构。</p>
+<p><strong>原文</strong>（AI检测概率高）：</p>
+<blockquote>
+<p>The analysis of the data reveals a significant correlation between the two variables, which suggests that the proposed model is effective in predicting the outcomes.</p>
+</blockquote>
+<p><strong>改写后</strong>（AI检测概率低）：</p>
+<blockquote>
+<p>When we look at how these two variables move together, the data tells a clear story. The model we built does a decent job at forecasting what comes next.</p>
+</blockquote>
+<p>变化：
+- 从被动语态→主动语态
+- 从名词化表达→动词驱动
+- 加了一个自然的口语过渡（"When we look at..."）</p>
+<h3>关键操作二：引入自然的不完美</h3>
+<p>人类写作不是完美的。偶尔的短句、口语化表达、甚至"不优雅"的句式，反而能降低AI概率。</p>
+<p>有用的技巧：
+- 句首用连接词（But、And、Yet、Still）
+- 适当用I think、It seems like、What I found was之类的主观表达
+- 长句子后面接一个短句，制造节奏变化</p>
+<h3>关键操作三：段落重构</h3>
+<p>检测器看的不只是句子，还有段落之间的逻辑关系。</p>
+<p>把原文的"论点→论据→结论"的标准三段式，改成：
+1. 先抛一个具体问题或观察
+2. 然后说"我一开始以为…结果发现…"
+3. 最后给出结论</p>
+<p>这种"预期违背"的叙事结构，比"标准论证"结构更不像AI。</p>
+<h3>实测结果</h3>
+<table>
+<thead>
+<tr>
+<th>处理阶段</th>
+<th style="text-align: center;">AI率</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原始文本</td>
+<td style="text-align: center;">78%</td>
+<td>直接AI生成未处理</td>
+</tr>
+<tr>
+<td>同义词替换</td>
+<td style="text-align: center;">65%</td>
+<td>效果有限，检测器已升级</td>
+</tr>
+<tr>
+<td>句式重组</td>
+<td style="text-align: center;">32%</td>
+<td>大幅下降，但还超标</td>
+</tr>
+<tr>
+<td>段落重构+不完美注入</td>
+<td style="text-align: center;">12%</td>
+<td>通过大多数检测器门槛</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>第三步：工具和自动化</h2>
+<p>手动改一次还行，但一人公司如果每天都要处理多篇文档，人工成本太高。</p>
+<p>所以我把这个过程固化成了一套自动化流程：</p>
+<ol>
+<li><strong>输入层</strong>：粘贴原文或上传文档</li>
+<li><strong>处理层</strong>：先做句式重组 → 再做段落重构 → 最后校对术语和数据</li>
+<li><strong>输出层</strong>：生成改写后的文本 + AI率检测报告</li>
+</ol>
+<p>这就是我做的 Huma（Humanizer 缩写）。用 Claude Code 辅助开发，前后端加部署花了大概两周时间。</p>
+<p>如果你不想自己折腾这整套流程，可以直接试试：<strong>https://writer.ipengai.cn</strong>，免费500词，用完再决定要不要付费。</p>
+<p>当然，手工改的效果往往更好（因为你可以加入自己独特的表达），工具适合批量处理和日常降AI率。</p>
+<hr />
+<h2>总结</h2>
+<p>降AI率的核心不是"骗过检测器"，而是<strong>让你的文本更接近人类的写作习惯</strong>。</p>
+<p>三个关键：
+1. 不要只换词，要改句式结构
+2. 适当加入"不完美"的自然表达
+3. 段落之间的逻辑过渡要有"人味儿"</p>
+<p>工具可以帮你省80%的时间，但最后20%的润色——那些真正体现你思考的东西——得自己来。</p>
+<p>有问题可以评论区聊聊，或者直接去 <strong>https://ipengai.cn</strong> 试试。</p>
+      </div>
+      <footer class="article-footer">
+        <p>芃芃工作室 iPENG AI Studio · &copy; 2024-2026</p>
+        <a href="../index.html#writing" class="back-home">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          返回专栏
+        </a>
+      </footer>
+    </div>
+  </article>
+  <script>
+    (function() {
+      const tocSidebar = document.getElementById('tocSidebar');
+      const tocList = document.getElementById('tocList');
+      const headings = document.querySelectorAll('.article-body h2, .article-body h3');
+      if (!headings.length || !tocList) return;
+      const items = [];
+      headings.forEach((h, i) => {
+        const id = h.textContent.trim().toLowerCase()
+          .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+          .replace(/^-+|-+$/g, '') || `section-${i}`;
+        h.id = id;
+        const isH3 = h.tagName === 'H3';
+        const li = document.createElement('li');
+        li.className = isH3 ? 'toc-h3' : '';
+        const a = document.createElement('a');
+        a.href = '#' + id;
+        a.textContent = h.textContent.trim();
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const top = h.getBoundingClientRect().top + window.scrollY - 80;
+          window.scrollTo({ top, behavior: 'smooth' });
+        });
+        li.appendChild(a);
+        tocList.appendChild(li);
+        items.push({ el: a, top: 0 });
+      });
+      tocSidebar.classList.add('visible');
+      function updatePositions() {
+        headings.forEach((h, i) => { items[i].top = h.offsetTop; });
+      }
+      updatePositions();
+      window.addEventListener('resize', updatePositions);
+      function onScroll() {
+        const scrollY = window.scrollY + 120;
+        let activeIdx = -1;
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (scrollY >= items[i].top) { activeIdx = i; break; }
+        }
+        items.forEach((item, i) => {
+          item.el.classList.toggle('active', i === activeIdx);
+        });
+      }
+      onScroll();
+      window.addEventListener('scroll', onScroll, { passive: true });
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turnitin到底怎么检测AI的？揭秘5大检测维度 — 芃芃工作室</title>
+  <meta name="description" content="Turnitin到底怎么检测AI的？揭秘5大检测维度">
+  <meta name="keywords" content="Turnitin,检测原理,科普">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --green: #10B981;
+      --blue: #3B82F6;
+      --purple: #8B5CF6;
+      --brand-grad: linear-gradient(135deg, #10B981, #3B82F6, #8B5CF6);
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-300: #cbd5e1;
+      --gray-400: #94a3b8;
+      --gray-500: #64748b;
+      --gray-600: #475569;
+      --gray-700: #334155;
+      --gray-800: #1e293b;
+      --gray-900: #0f172a;
+      --white: #ffffff;
+    }
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-600);
+      line-height: 1.8;
+    }
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    img { max-width: 100%; }
+    .nav-bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 56px;
+      display: flex; align-items: center;
+      background: rgba(255,255,255,0.85); backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .nav-bar .inner {
+      max-width: 720px; margin: 0 auto; padding: 0 24px; width: 100%;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-bar .brand { font-weight: 700; font-size: 0.95rem; color: var(--gray-800); display: flex; align-items: center; gap: 8px; }
+    .nav-bar .brand .logo-mark { width: 28px; height: 28px; border-radius: 6px; background: var(--brand-grad); display: flex; align-items: center; justify-content: center; color: var(--white); font-size: 15px; font-weight: 700; }
+    .nav-bar .back-link { font-size: 0.85rem; color: var(--gray-400); display: flex; align-items: center; gap: 4px; transition: color 0.2s; }
+    .nav-bar .back-link:hover { color: var(--green); text-decoration: none; }
+    .article-wrap { max-width: 960px; margin: 0 auto; padding: 100px 24px 80px; display: flex; gap: 48px; align-items: flex-start; }
+    .article-main { flex: 1; min-width: 0; max-width: 720px; }
+    .article-header { margin-bottom: 48px; }
+    .article-header .tag-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .article-header .tag { padding: 3px 12px; background: rgba(16,185,129,0.08); color: var(--green); border-radius: 6px; font-size: 0.78rem; font-weight: 500; }
+    .article-header h1 { font-size: 2rem; font-weight: 700; line-height: 1.3; color: var(--gray-900); margin-bottom: 16px; letter-spacing: -0.01em; }
+    .article-header .meta { display: flex; align-items: center; gap: 16px; font-size: 0.85rem; color: var(--gray-400); }
+    .article-header .meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--gray-300); }
+    .article-body { background: var(--white); border-radius: 16px; padding: 48px 48px; border: 1px solid var(--gray-200); font-size: 1rem; line-height: 1.9; color: var(--gray-600); }
+    .article-body h2 { font-size: 1.45rem; font-weight: 700; color: var(--gray-800); margin-top: 44px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--gray-100); }
+    .article-body h3 { font-size: 1.1rem; font-weight: 600; color: var(--gray-800); margin-top: 32px; margin-bottom: 12px; }
+    .article-body p { margin-bottom: 20px; }
+    .article-body strong { color: var(--gray-800); font-weight: 600; }
+    .article-body ul, .article-body ol { margin-bottom: 20px; padding-left: 24px; }
+    .article-body li { margin-bottom: 8px; }
+    .article-body code { font-family: "SF Mono", "Fira Code", "Fira Mono", monospace; font-size: 0.88em; background: var(--gray-100); padding: 2px 8px; border-radius: 4px; color: var(--gray-700); }
+    .article-body pre { background: var(--gray-900); color: #e2e8f0; border-radius: 12px; padding: 24px; overflow-x: auto; margin-bottom: 24px; font-size: 0.88rem; line-height: 1.6; }
+    .article-body pre code { background: none; padding: 0; color: inherit; }
+    .article-body blockquote { border-left: 3px solid var(--green); padding: 12px 20px; margin-bottom: 20px; background: rgba(16,185,129,0.04); border-radius: 0 8px 8px 0; color: var(--gray-600); font-style: normal; }
+    .article-body blockquote p { margin-bottom: 0; }
+    .article-body hr { border: none; border-top: 1px solid var(--gray-200); margin: 40px 0; }
+    .article-body table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 0.92rem; }
+    .article-body th, .article-body td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--gray-200); }
+    .article-body th { font-weight: 600; color: var(--gray-800); background: var(--gray-50); }
+    .highlight-box { background: linear-gradient(135deg, rgba(16,185,129,0.04), rgba(59,130,246,0.04)); border: 1px solid rgba(16,185,129,0.12); border-radius: 12px; padding: 24px 28px; margin-bottom: 24px; }
+    .highlight-box p { margin-bottom: 0; }
+    .article-footer { margin-top: 48px; text-align: center; padding-top: 32px; border-top: 1px solid var(--gray-200); }
+    .article-footer p { font-size: 0.88rem; color: var(--gray-400); }
+    .article-footer .back-home { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 10px 24px; border-radius: 8px; border: 1px solid var(--gray-200); font-size: 0.88rem; font-weight: 500; color: var(--gray-500); transition: all 0.3s; }
+    .article-footer .back-home:hover { border-color: var(--green); color: var(--green); text-decoration: none; box-shadow: 0 4px 12px rgba(16,185,129,0.1); }
+    .toc-sidebar { width: 170px; flex-shrink: 0; position: sticky; top: 80px; max-height: calc(100vh - 120px); overflow-y: auto; padding-top: 4px; opacity: 0; transition: opacity 0.4s ease; }
+    .toc-sidebar.visible { opacity: 1; }
+    .toc-inner { border-left: 2px solid var(--gray-200); padding: 4px 0 4px 16px; }
+    .toc-label { font-size: 0.72rem; font-weight: 600; color: var(--gray-400); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
+    .toc-list { list-style: none; padding: 0; margin: 0; }
+    .toc-list li { margin-bottom: 6px; line-height: 1.4; }
+    .toc-list a { display: block; font-size: 0.8rem; color: var(--gray-400); padding: 3px 0; transition: color 0.2s, border-color 0.2s; border-left: 2px solid transparent; margin-left: -18px; padding-left: 16px; text-decoration: none; }
+    .toc-list a:hover { color: var(--gray-600); }
+    .toc-list a.active { color: var(--green); border-left-color: var(--green); }
+    .toc-list .toc-h3 a { padding-left: 28px; font-size: 0.76rem; }
+    .toc-list .toc-h3 a.active { border-left-color: var(--green); }
+    .article-body ul li strong { color: var(--gray-800); }
+    @media (max-width: 1024px) { .article-wrap { flex-direction: column; gap: 0; } .toc-sidebar { display: none; } .article-main { max-width: 100%; } }
+    @media (max-width: 600px) { .article-body { padding: 28px 20px; border-radius: 12px; } .article-header h1 { font-size: 1.5rem; } }
+  </style>
+</head>
+<body>
+  <nav class="nav-bar">
+    <div class="inner">
+      <a href="../index.html" class="brand"><span class="logo-mark">芃</span>芃芃工作室</a>
+      <a href="../index.html#writing" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        返回专栏
+      </a>
+    </div>
+  </nav>
+  <article class="article-wrap">
+    <nav class="toc-sidebar" id="tocSidebar">
+      <div class="toc-inner">
+        <div class="toc-label">目录</div>
+        <ul class="toc-list" id="tocList"></ul>
+      </div>
+    </nav>
+    <div class="article-main">
+      <header class="article-header">
+        <div class="tag-row"><span class="tag">Turnitin</span><span class="tag">检测原理</span><span class="tag">科普</span></div>
+        <h1>Turnitin到底怎么检测AI的？揭秘5大检测维度</h1>
+        <div class="meta">
+          <span>zzzheng</span>
+          <span class="dot"></span>
+          <span>2026 年 7 月</span>
+          <span class="dot"></span>
+          <span>约 1361 字</span>
+        </div>
+      </header>
+      <div class="article-body">
+        <h1>Turnitin到底怎么检测AI的？揭秘5大检测维度</h1>
+<hr />
+<h2>Turnitin检测的不是"你有没有用AI"，是你的"写作风格"</h2>
+<p>很多人以为Turnitin检测AI的方式是"把你的文章拿去和某个巨大的AI生成库做对比"。</p>
+<p>不是的。</p>
+<p>Turnitin用的是<strong>写作风格分析</strong>——它分析的不是内容本身，而是你<strong>怎么写</strong>的。</p>
+<p>下面把它5个检测维度一个一个拆开。</p>
+<hr />
+<h2>维度一：困惑度（Perplexity）——你的文章"太好猜"了</h2>
+<p>困惑度是衡量文本可预测性的指标。大白话就是：<strong>你的下一个词，AI能不能猜到？</strong></p>
+<p>举个例子，如果我说"马路上有一辆..."，你大概率会接"车"。这就是低困惑度——太容易猜了。</p>
+<p>AI写文章时，它总是选概率最高的那个词。所以AI文本的困惑度普遍偏低。人类写文章的时候会选一些不按常理出牌的词——比如"马路上有一个车队，全是黑金双拼色的限量版"，这就不是AI会写出来的。</p>
+<p><strong>参考数据：</strong></p>
+<table>
+<thead>
+<tr>
+<th>文本类型</th>
+<th style="text-align: center;">困惑度范围</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-4输出</td>
+<td style="text-align: center;">5-15</td>
+<td>太流畅了，容易被识别</td>
+</tr>
+<tr>
+<td>人类博客</td>
+<td style="text-align: center;">30-80</td>
+<td>正常范围</td>
+</tr>
+<tr>
+<td>创意写作</td>
+<td style="text-align: center;">60-150+</td>
+<td>用词大胆，难以预测</td>
+</tr>
+<tr>
+<td>非母语英语</td>
+<td style="text-align: center;">15-40</td>
+<td>容易被误判为AI</td>
+</tr>
+</tbody>
+</table>
+<p>所以降AI率的一个核心技巧就是：<strong>把一些"太完美"的词语替换成更自然、甚至稍显不那么精确的表达。</strong></p>
+<hr />
+<h2>维度二：突发性（Burstiness）——你的句子"太均匀"了</h2>
+<p>突发性衡量的是文本的波动程度——长短句交替、节奏变化、情绪起伏。</p>
+<p>AI写出来的文章有一个显著特征：<strong>句子长度很均匀</strong>。每句话差不多长，结构差不多规整，节奏稳定得像节拍器。</p>
+<p>而人类写的文章：长句子、短句子、突然的感叹、偶尔的跑题——波动很大。</p>
+<p><strong>突发性参考值：</strong>
+- AI生成：小于0.3（过于平稳）
+- 人类写作：0.4到0.8（波动正常）</p>
+<p>降AI率技巧：<strong>刻意制造句子长度的变化。</strong> 一段话里，三行长的句子后面接一个短句。打破节奏就是打破AI痕迹。</p>
+<hr />
+<h2>维度三：词汇分布——你的用词"太有规律"了</h2>
+<p>AI有一些高频词，检测器会特别关注。</p>
+<p>以下这些词如果在一篇文章里反复出现，检测器会提高警惕：</p>
+<ul>
+<li>"delve"（钻研）</li>
+<li>"paramount"（至关重要的）</li>
+<li>"testament"（证明）</li>
+<li>"groundbreaking"（开创性的）</li>
+<li>"not only... but also"（不仅...而且）</li>
+<li>"serves as"（作为）</li>
+<li>"in conclusion"（总之）</li>
+</ul>
+<p>这些不是不能用，但如果你的文章里这种"AI最爱词汇"出现频率异常高，并且其他词汇的多样性偏低，检测器就会判定为AI生成。</p>
+<p>降AI率技巧：<strong>打开全文搜索，看看这些词出现了几次。换掉一半。</strong> 用同义短语代替，不要重复用同一个表达。</p>
+<hr />
+<h2>维度四：句式结构——AI偏爱"标准模式"</h2>
+<p>AI写文章有一个习惯——喜欢用<strong>被动语态</strong>和<strong>冗长的复合句</strong>。</p>
+<p>具体表现：
+- 被动语态比例偏高
+- 句子结构过于规范（主谓宾标准排列）
+- 缺少口语化表达和自然的语法"瑕疵"</p>
+<p>人类写作相反：主动语态为主、长短句交替、偶尔的碎片化表达。</p>
+<p>降AI率技巧：<strong>把被动的改成主动的。</strong> 把长句拆成短句。在合适的地方加入一些自然的表达——比如"I think"、"What I found was"。</p>
+<hr />
+<h2>维度五：逻辑连贯性——AI的论证"太完美"了</h2>
+<p>这个维度是近年检测器升级的重点。</p>
+<p>AI生成的论证结构非常标准：论点→论据→结论，段落之间的过渡平滑得不像真的。</p>
+<p>而人类的论证：有时候会跳步、有时候会跑题、有时候会在讨论到一半时加入一个突然的发现。</p>
+<p>检测器现在会分析段落之间的"信息增量"——如果每一段都是在用不同的话说同一个意思，而不是在推进论证，那就是AI信号。</p>
+<p>降AI率技巧：<strong>重新组织段落结构。</strong> 尝试"预期违背"式的叙事——先抛一个问题，然后说"我以为...但结果发现..."，而不是标准的三段式论证。</p>
+<hr />
+<h2>总结：降AI率的底层逻辑</h2>
+<p>理解了这5个维度，降AI率的思路就很清楚了：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>AI特征</th>
+<th>人类特征</th>
+<th>怎么做</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>困惑度</td>
+<td>低（太好猜）</td>
+<td>高（用词出人意料）</td>
+<td>选非常用词</td>
+</tr>
+<tr>
+<td>突发性</td>
+<td>低（太平稳）</td>
+<td>高（有起伏）</td>
+<td>长短句交替</td>
+</tr>
+<tr>
+<td>词汇分布</td>
+<td>集中（高频词重复）</td>
+<td>分散（表达多样）</td>
+<td>换掉AI高频词</td>
+</tr>
+<tr>
+<td>句式结构</td>
+<td>规范（被动语态多）</td>
+<td>多变（主动+口语化）</td>
+<td>拆长句+改主动</td>
+</tr>
+<tr>
+<td>逻辑连贯</td>
+<td>完美（过度连贯）</td>
+<td>自然（有跳跃）</td>
+<td>重构段落叙事</td>
+</tr>
+</tbody>
+</table>
+<p><strong>检测器不是在查你"用了什么工具"，而是在查你"写得像不像人"。</strong></p>
+<p>知道规则之后，你就能有针对性地改。不是骗过检测器，是让你的文本更接近真实的写作习惯。</p>
+<p>如果你不想手动处理每篇文章，我做了个工具 <strong>https://writer.ipengai.cn</strong>，原理就是基于这套逻辑——自动调整困惑度和突发性分布，让文本更接近人类写作模式。免费500词，可以试试效果。</p>
+      </div>
+      <footer class="article-footer">
+        <p>芃芃工作室 iPENG AI Studio · &copy; 2024-2026</p>
+        <a href="../index.html#writing" class="back-home">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          返回专栏
+        </a>
+      </footer>
+    </div>
+  </article>
+  <script>
+    (function() {
+      const tocSidebar = document.getElementById('tocSidebar');
+      const tocList = document.getElementById('tocList');
+      const headings = document.querySelectorAll('.article-body h2, .article-body h3');
+      if (!headings.length || !tocList) return;
+      const items = [];
+      headings.forEach((h, i) => {
+        const id = h.textContent.trim().toLowerCase()
+          .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+          .replace(/^-+|-+$/g, '') || `section-${i}`;
+        h.id = id;
+        const isH3 = h.tagName === 'H3';
+        const li = document.createElement('li');
+        li.className = isH3 ? 'toc-h3' : '';
+        const a = document.createElement('a');
+        a.href = '#' + id;
+        a.textContent = h.textContent.trim();
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const top = h.getBoundingClientRect().top + window.scrollY - 80;
+          window.scrollTo({ top, behavior: 'smooth' });
+        });
+        li.appendChild(a);
+        tocList.appendChild(li);
+        items.push({ el: a, top: 0 });
+      });
+      tocSidebar.classList.add('visible');
+      function updatePositions() {
+        headings.forEach((h, i) => { items[i].top = h.offsetTop; });
+      }
+      updatePositions();
+      window.addEventListener('resize', updatePositions);
+      function onScroll() {
+        const scrollY = window.scrollY + 120;
+        let activeIdx = -1;
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (scrollY >= items[i].top) { activeIdx = i; break; }
+        }
+        items.forEach((item, i) => {
+          item.el.classList.toggle('active', i === activeIdx);
+        });
+      }
+      onScroll();
+      window.addEventListener('scroll', onScroll, { passive: true });
+    })();
+</script>
+</body>
+</html>
