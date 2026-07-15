@@ -4,11 +4,21 @@ Authentication routes — register, login, logout, user info.
 
 import re
 import logging
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, session
+from flask_wtf.csrf import generate_csrf
 from app.extensions import limiter
 from app.helpers import get_db
 
 auth_bp = Blueprint('auth', __name__)
+
+
+@auth_bp.route('/api/csrf-token')
+def api_csrf_token():
+    """Issue a fresh CSRF token so a stale page can recover its session."""
+    response = jsonify({"csrf_token": generate_csrf()})
+    response.headers['Cache-Control'] = 'no-store, private'
+    return response
 
 
 @auth_bp.route('/api/register', methods=['POST'])
@@ -39,6 +49,11 @@ def api_register():
         user = User.create(conn, email, password)
         session['user_id'] = user['id']
         session.permanent = True
+        conn.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), user['id'])
+        )
+        conn.commit()
         return jsonify({
             "success": True,
             "user": {"id": user['id'], "email": user['email']}
@@ -67,6 +82,11 @@ def api_login():
 
     session['user_id'] = user['id']
     session.permanent = True
+    conn.execute(
+        "UPDATE users SET last_login_at = ? WHERE id = ?",
+        (datetime.now(timezone.utc).isoformat(), user['id'])
+    )
+    conn.commit()
     return jsonify({
         "success": True,
         "user": {"id": user['id'], "email": user['email']}
@@ -85,15 +105,21 @@ def api_me():
     """Get current logged-in user info."""
     user_id = session.get('user_id')
     if not user_id:
-        return jsonify({"error": "未登录"}), 401
+        response = jsonify({"error": "未登录"})
+        response.headers['Cache-Control'] = 'no-store, private'
+        return response, 401
 
     from app.models import User
     conn = get_db()
     user = User.get_by_id(conn, user_id)
     if not user:
         session.pop('user_id', None)
-        return jsonify({"error": "未登录"}), 401
+        response = jsonify({"error": "未登录"})
+        response.headers['Cache-Control'] = 'no-store, private'
+        return response, 401
 
-    return jsonify({
+    response = jsonify({
         "user": {"id": user['id'], "email": user['email']}
     })
+    response.headers['Cache-Control'] = 'no-store, private'
+    return response

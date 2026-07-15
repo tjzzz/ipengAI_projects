@@ -25,11 +25,14 @@ def api_orders():
     per_page = min(request.args.get('per_page', 10, type=int), 50)
 
     conn = get_db()
-    orders, total = Order.get_by_user_id(conn, user_id, page=page, per_page=per_page, payment_status='paid')
+    orders, total = Order.get_by_user_id(
+        conn, user_id, page=page, per_page=per_page, history_only=True
+    )
 
     _safe_keys = ['id', 'order_id', 'user_id', 'original_format', 'original_filename',
                   'word_count', 'price', 'mode', 'original_score', 'rewritten_score',
                   'status', 'payment_status',
+                  'recharge_words', 'balance_words_used', 'balance_after',
                   'paid_at', 'created_at', 'expires_at']
     orders_safe = [
         {k: o[k] for k in _safe_keys if k in o}
@@ -92,8 +95,8 @@ def api_rehumanize(order_id):
     if order['user_id'] != user_id:
         return jsonify({"error": "无权操作该订单"}), 403
 
-    if order.get('payment_status') != 'paid':
-        return jsonify({"error": "仅付费订单可免费再次改写"}), 403
+    if order.get('payment_status') not in ('paid', 'balance'):
+        return jsonify({"error": "仅已消费词数的订单可免费再次改写"}), 403
 
     expires_at = order['expires_at']
     try:

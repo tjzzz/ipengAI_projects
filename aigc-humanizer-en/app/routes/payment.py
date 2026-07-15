@@ -3,12 +3,12 @@ Payment routes — create payment order, check payment status,
 Alipay webhook handler, and test mock payment.
 """
 
-import uuid
 import logging
-from datetime import datetime
 from flask import Blueprint, request, jsonify, session
 from app.extensions import limiter
-from app.helpers import get_db, login_required, process_payment_success
+from app.helpers import (
+    generate_order_id, get_db, login_required, process_payment_success
+)
 from config import PRICE_PER_1000_WORDS
 
 payment_bp = Blueprint('payment', __name__)
@@ -20,12 +20,16 @@ def api_payment_config():
     Get payment configuration info (adapter type).
     """
     from flask import current_app
+    import config
     
     adapter_type = current_app.config.get('PAYMENT_ADAPTER', 'mock')
     
     return jsonify({
         "adapter_type": adapter_type,
-        "is_mock": adapter_type == 'mock'
+        "is_mock": adapter_type == 'mock',
+        "recharge_packages": getattr(
+            config, 'RECHARGE_PACKAGE_WORDS', [2000, 5000, 10000]
+        )
     })
 
 
@@ -34,10 +38,13 @@ def api_payment_config():
 @login_required
 def api_create_payment():
     """
-    Create a payment order and return QR code for scanning.
+    Create an auto-recharge order and return a QR code for scanning.
+
+    Cash only buys word balance. After payment succeeds, the recharge is
+    credited and the linked rewrite task is charged automatically.
     """
     from app.extensions import payment_adapter as adapter
-    from app.models import Order
+    from app.models import Order, User
 
     data = request.get_json(silent=True) or {}
     text = data.get('text') or session.get('last_text', '')
@@ -47,31 +54,56 @@ def api_create_payment():
         return jsonify({"error": "没有可改写的文本，请先分析"}), 400
 
     word_count = len(text.split())
-    price = round(PRICE_PER_1000_WORDS * (word_count / 1000), 2)
+    user_id = session.get('user_id')
+    conn = get_db()
+    balance = User.get_balance(conn, user_id)
+    shortfall = max(word_count - balance, 0)
 
-    # 生成格式: order_YYYYMMDD_随机字符
-    date_str = datetime.now().strftime("%Y%m%d")
-    random_str = uuid.uuid4().hex[:6].lower()
-    order_id = f"order_{date_str}_{random_str}"
+    if shortfall == 0:
+        return jsonify({
+            "error": "当前余额充足，无需充值",
+            "balance_sufficient": True,
+            "balance": balance,
+            "word_count": word_count
+        }), 409
+
+    requested_recharge = data.get('recharge_words') or shortfall
+    try:
+        recharge_words = int(requested_recharge)
+    except (TypeError, ValueError):
+        return jsonify({"error": "充值词数不正确"}), 400
+
+    if recharge_words < shortfall:
+        return jsonify({
+            "error": f"至少需要充值 {shortfall} 词才能完成本次任务",
+            "balance": balance,
+            "shortfall": shortfall
+        }), 400
+    if recharge_words > 100000:
+        return jsonify({"error": "单次充值词数不能超过 100000"}), 400
+
+    price = round(PRICE_PER_1000_WORDS * (recharge_words / 1000), 2)
+
+    order_id = generate_order_id()
 
     original_format = session.get('last_original_format', 'txt')
     original_filename = session.get('last_original_filename', None)
-    user_id = session.get('user_id')
-
-    conn = get_db()
     try:
         Order.create_payment_record(
             conn, user_id, order_id, text, original_format, original_filename,
-            word_count, price, mode
+            word_count, price, mode, recharge_words, min(balance, word_count)
         )
-        logging.info(f"[PAYMENT] Order created in DB: {order_id}, user={user_id}, words={word_count}, price={price}")
+        logging.info(
+            f"[PAYMENT] Recharge order created: {order_id}, user={user_id}, "
+            f"task_words={word_count}, recharge_words={recharge_words}, price={price}"
+        )
     except Exception:
         logging.exception("Failed to create payment order")
         return jsonify({"error": "创建订单失败，请稍后重试"}), 500
 
     # ★ 优先使用 create_prepay_form()（qr_pay_mode=4 + iframe）
     #   降级到 create_prepay_order()（qr_pay_mode=1 + qrcode.js）
-    subject = f"AI降AI率服务 - {word_count}词"
+    subject = f"Huma词数充值 - {recharge_words}词"
     if hasattr(adapter, 'create_prepay_form'):
         logging.info(f"[PAYMENT] Calling adapter.create_prepay_form for {order_id}")
         result = adapter.create_prepay_form(order_id, price, subject)
@@ -113,6 +145,11 @@ def api_create_payment():
         "order": {
             "order_id": order_id,
             "word_count": word_count,
+            "balance": balance,
+            "shortfall": shortfall,
+            "recharge_words": recharge_words,
+            "balance_words_used": min(balance, word_count),
+            "balance_after": balance + recharge_words - word_count,
             "price": price,
             "form_html": form_html,
             "qr_code": qr_code,
@@ -128,7 +165,7 @@ def api_create_payment():
 def api_payment_status(order_id):
     """Check payment status for an order (used by frontend polling)."""
     from app.extensions import payment_adapter as adapter
-    from app.models import Order
+    from app.models import Order, User
 
     user_id = session.get('user_id')
     conn = get_db()
@@ -156,7 +193,7 @@ def api_payment_status(order_id):
             )
             if query_result.get('status') == 'paid':
                 trade_no = query_result.get('trade_no') or f"QUERY_{order_id}"
-                process_payment_success(conn, order_id, trade_no)
+                process_payment_success(order_id, trade_no)
                 # Refresh order from DB to get updated status
                 order = Order.get_by_order_id(conn, order_id)
                 payment_status = order.get('payment_status', 'paid')
@@ -164,13 +201,21 @@ def api_payment_status(order_id):
         except Exception:
             logging.warning("Payment query failed, returning current status", exc_info=True)
 
+    current_balance = User.get_balance(conn, user_id)
     response = {
         "order_id": order_id,
         "payment_status": payment_status,
         "status": status,
         "price": order.get('price'),
-        "word_count": order.get('word_count')
+        "word_count": order.get('word_count'),
+        "recharge_words": order.get('recharge_words', 0),
+        "balance_words_used": order.get('balance_words_used', 0),
+        "balance_after": current_balance,
+        "current_balance": current_balance
     }
+
+    if status == 'awaiting_balance':
+        response['message'] = '充值已到账，但账户余额仍不足，请补足后继续任务'
 
     if status == 'completed' and order.get('rewritten_text'):
         from app.helpers import derive_risk_level
@@ -235,7 +280,7 @@ def api_webhook_alipay():
             return "fail", 200
 
     try:
-        process_payment_success(conn, order_id, trade_no)
+        process_payment_success(order_id, trade_no)
     except Exception:
         logging.exception(f"Payment processing failed for order {order_id}")
         return "fail", 200
@@ -266,7 +311,7 @@ def api_test_mock_payment(order_id):
 
     trade_no = f"MOCK_TRADE_{order_id}"
     try:
-        process_payment_success(conn, order_id, trade_no)
+        process_payment_success(order_id, trade_no)
         return jsonify({"success": True, "message": "支付模拟成功，正在后台改写...", "order_id": order_id})
     except Exception:
         logging.exception("Mock payment processing failed")

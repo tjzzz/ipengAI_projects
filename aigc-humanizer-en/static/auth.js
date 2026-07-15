@@ -5,13 +5,21 @@
 
 /* ========== AUTH STATE ========== */
 let currentUser = null;
+let authStateVersion = 0;
 
 /* Check login status on page load (eager init to avoid race with orders.html) */
 let loginStatusPromise = checkLoginStatus();
 
 async function checkLoginStatus() {
+    const requestVersion = ++authStateVersion;
     try {
-        const resp = await fetch('/api/me');
+        const resp = await fetch('/api/me', {
+            credentials: 'same-origin',
+            cache: 'no-store'
+        });
+        // A login/register/logout action may have completed while this request
+        // was in flight. Never let an older /api/me response overwrite it.
+        if (requestVersion !== authStateVersion) return currentUser;
         if (resp.ok) {
             const data = await resp.json();
             currentUser = data.user;
@@ -21,10 +29,20 @@ async function checkLoginStatus() {
             updateNavbar(null);
         }
     } catch (err) {
+        if (requestVersion !== authStateVersion) return currentUser;
         currentUser = null;
         updateNavbar(null);
     }
+    return currentUser;
 }
+
+// Browsers may restore the function page from the back-forward cache without
+// executing scripts again. Refresh auth state when that cached page reappears.
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+        loginStatusPromise = checkLoginStatus();
+    }
+});
 
 /* ========== NAVBAR ========== */
 function updateNavbar(user) {
@@ -32,17 +50,43 @@ function updateNavbar(user) {
     const logoutBtn = document.getElementById('logout-btn');
     const ordersLink = document.getElementById('orders-link');
     const navUser = document.getElementById('nav-user');
+    const redeemBtn = document.getElementById('redeem-btn');
 
     if (user) {
         if (loginBtn) loginBtn.style.display = 'none';
         if (logoutBtn) logoutBtn.style.display = 'inline-flex';
         if (ordersLink) ordersLink.style.display = 'inline-block';
         if (navUser) { navUser.style.display = 'inline-block'; navUser.textContent = user.email; }
+        if (redeemBtn) redeemBtn.style.display = 'inline-flex';
+        // Fetch balance
+        fetch('/api/user/balance', { credentials: 'same-origin', cache: 'no-store' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success !== false && typeof updateNavBalance === 'function') {
+                    updateNavBalance(data.balance || 0);
+                }
+            })
+            .catch(() => {});
     } else {
         if (loginBtn) loginBtn.style.display = 'inline-flex';
         if (logoutBtn) logoutBtn.style.display = 'none';
         if (ordersLink) ordersLink.style.display = 'none';
         if (navUser) navUser.style.display = 'none';
+        if (redeemBtn) redeemBtn.style.display = 'none';
+        if (typeof updateNavBalance === 'function') {
+            updateNavBalance(0);
+        }
+    }
+}
+
+function updateNavBalance(balance) {
+    const el = document.getElementById('nav-balance');
+    if (!el) return;
+    if (balance > 0) {
+        el.textContent = balance + '词';
+        el.style.display = 'inline-flex';
+    } else {
+        el.style.display = 'none';
     }
 }
 
@@ -128,6 +172,7 @@ async function handleLogin() {
             return;
         }
 
+        authStateVersion++;
         currentUser = data.user;
         updateNavbar(currentUser);
         closeAuthModal();
@@ -221,6 +266,7 @@ async function handleRegister() {
             return;
         }
 
+        authStateVersion++;
         currentUser = data.user;
         updateNavbar(currentUser);
         closeAuthModal();
@@ -285,6 +331,7 @@ function togglePasswordVisibility(inputId, btn) {
 async function logout() {
     try {
         await _csrfFetch('/api/logout', { method: 'POST' });
+        authStateVersion++;
         currentUser = null;
         updateNavbar(null);
         showToast('已退出登录', 'info');

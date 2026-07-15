@@ -1107,6 +1107,57 @@ body {
 
 .orders-title { font-size: 1.8rem; font-weight: 700; }
 
+.account-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 28px;
+}
+.account-eyebrow {
+    color: var(--primary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    margin-bottom: 6px;
+}
+.account-subtitle { color: var(--gray-500); margin-top: 6px; }
+.account-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.2fr);
+    gap: 20px;
+    margin-bottom: 48px;
+}
+.account-card {
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: 16px;
+    padding: 26px;
+    box-shadow: var(--shadow-sm);
+}
+.balance-card {
+    color: var(--white);
+    background: linear-gradient(135deg, #4338ca, #7c3aed);
+    border: none;
+}
+.account-card-label { font-size: 0.9rem; font-weight: 600; opacity: 0.86; }
+.account-balance {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 2.6rem;
+    font-weight: 800;
+    margin: 14px 0 8px;
+}
+.account-balance small { font-size: 1rem; font-weight: 500; }
+.account-card-note { font-size: 0.82rem; opacity: 0.75; }
+.account-redeem-row { display: flex; gap: 10px; margin-top: 16px; }
+.account-redeem-row .auth-input { margin: 0; flex: 1; text-transform: uppercase; font-family: monospace; }
+.account-redeem-message { min-height: 20px; margin-top: 10px; font-size: 0.82rem; }
+.account-redeem-message.success { color: var(--success); }
+.account-redeem-message.error { color: var(--danger); }
+.account-orders-header { margin-bottom: 20px; }
+
 .orders-list {
     display: flex;
     flex-direction: column;
@@ -1138,6 +1189,46 @@ body {
     font-size: 0.95rem;
     font-weight: 600;
     color: var(--gray-800);
+}
+.order-id-line { display: flex; align-items: center; gap: 10px; }
+.order-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+.order-status.completed { color: #047857; background: #d1fae5; }
+.order-status.processing { color: #1d4ed8; background: #dbeafe; }
+.order-status.failed { color: #b91c1c; background: #fee2e2; }
+.order-status.pending { color: #a16207; background: #fef3c7; }
+
+.recharge-options { margin-top: 16px; }
+.recharge-options-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--gray-500);
+    margin-bottom: 8px;
+}
+.recharge-option-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.recharge-option {
+    border: 1.5px solid var(--gray-200);
+    background: var(--white);
+    border-radius: 9px;
+    padding: 9px 10px;
+    color: var(--gray-700);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+.recharge-option small { display: block; margin-top: 2px; color: var(--gray-400); font-weight: 500; }
+.recharge-option:hover, .recharge-option.active {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: #eef2ff;
 }
 
 .order-meta {
@@ -1402,6 +1493,91 @@ body {
     margin: 16px 0;
 }
 
+/* ========== NAV BALANCE ========== */
+.nav-balance {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--success);
+    background: #f0fdf4;
+    padding: 4px 12px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+.nav-balance::before {
+    content: "⚡";
+    font-size: 0.85rem;
+}
+
+/* ========== REDEEM MODAL ========== */
+.redeem-modal { max-width: 420px; }
+.modal-desc {
+    font-size: 0.9rem;
+    color: var(--gray-500);
+    text-align: center;
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+.redeem-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.redeem-input-group input {
+    text-align: center;
+    font-size: 1.1rem;
+    padding: 12px 16px;
+}
+
+.redeem-error {
+    font-size: 0.85rem;
+    color: var(--danger);
+    padding: 8px 12px;
+    background: #fef2f2;
+    border-radius: var(--radius-sm);
+    display: none;
+    margin-bottom: 12px;
+}
+.redeem-error:not(:empty) { display: block; }
+
+.redeem-success {
+    font-size: 0.85rem;
+    color: var(--success);
+    padding: 8px 12px;
+    background: #f0fdf4;
+    border-radius: var(--radius-sm);
+    display: none;
+    margin-bottom: 12px;
+}
+.redeem-success:not(:empty) { display: block; }
+
+.redeem-balance {
+    text-align: center;
+    padding: 16px;
+    background: var(--gray-50);
+    border-radius: var(--radius-sm);
+    margin-top: 8px;
+}
+.redeem-balance-label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--gray-500);
+    margin-bottom: 4px;
+}
+.redeem-balance-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--primary);
+}
+.redeem-balance-unit {
+    font-size: 0.9rem;
+    color: var(--gray-500);
+    margin-left: 4px;
+}
+
 /* ========== TOAST ========== */
 .toast {
     position: fixed;
@@ -1510,9 +1686,16 @@ body {
 @media (max-width: 768px) {
     .order-card { flex-direction: column; gap: 12px; align-items: flex-start; }
     .order-actions { align-self: flex-end; }
+    .account-header { align-items: flex-start; }
+    .account-grid { grid-template-columns: 1fr; }
+    .order-meta { flex-wrap: wrap; gap: 8px 12px; }
 }
 
 @media (max-width: 640px) {
+    .orders-page { padding-top: 76px; }
+    .account-header { flex-direction: column; }
+    .account-redeem-row { flex-direction: column; }
+    .recharge-option-list { grid-template-columns: 1fr 1fr; }
     .hero { padding: 100px 0 40px; min-height: auto; }
     .hero-mono { font-size: 3.5rem; }
     .hero-tagline { font-size: 1.1rem; }

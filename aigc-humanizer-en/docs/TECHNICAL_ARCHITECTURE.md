@@ -1,6 +1,6 @@
-# AI Humanizer - 技术架构文档
+# Huma - 技术架构文档
 
-> **版本**: v1.0 | **日期**: 2026-05-28 | **状态**: 已整合
+> **版本**: v1.1 | **日期**: 2026-07-15 | **状态**: 已整合激活码配额包逻辑
 >
 > 整合来源：ARCHITECTURE.md + product-doc.md 第3章 + class-diagram.mermaid + sequence-diagram.mermaid
 
@@ -35,6 +35,7 @@ architecture-beta
         service checker[ai_checker.py] in backend
         service humanizer[humanizer_adapter.py] in backend
         service payment[payment_adapter.py] in backend
+        service activation[activation.py] in backend
         service models[models.py] in backend
 
     group storage[Data Layer]
@@ -50,6 +51,7 @@ architecture-beta
     routes:S --> N:checker
     routes:S --> N:humanizer
     routes:S --> N:payment
+    routes:S --> N:activation
     routes:S --> N:models
     models:S --> N:sqlite
     payment:E --> W:alipay
@@ -67,13 +69,14 @@ flowchart TB
         D[style.css 样式]
     end
 
-    subgraph API["🔌 API 路由层 (app.py)"]
+    subgraph API["🔌 API 路由层 (app/routes/*)"]
         E[Auth Routes]
         F[Analysis Routes]
         G[Rewrite Routes]
         H[Payment Routes]
         I[Order Routes]
         J[Download Routes]
+        X[Activation Routes]
     end
 
     subgraph Adapter["🔧 适配器层"]
@@ -87,8 +90,9 @@ flowchart TB
     end
 
     subgraph Data["💾 数据层"]
-        O[User 模型]
+        O[User 模型<br>含 word_balance]
         P[Order 模型]
+        Y[ActivationCode 模型]
     end
 
     subgraph Storage["🗄️ 存储"]
@@ -325,7 +329,14 @@ classDiagram
         +humanize(text, mode) str
     }
 
+    class ActivationCode {
+        +get_by_code(conn, code) dict
+        +redeem(conn, code, user_id) tuple
+        +stats(conn) dict
+    }
+
     User "1" --> "*" Order : has
+    User "1" --> "*" ActivationCode : redeems
     PaymentAdapter <|-- MockPaymentAdapter : implements
     PaymentAdapter <|-- AlipayPaymentAdapter : implements
     HumanizerAdapter <|-- RuleBasedHumanizer : implements
@@ -339,6 +350,7 @@ CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    word_balance INTEGER DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -356,7 +368,7 @@ CREATE TABLE orders (
     original_score REAL,
     rewritten_score REAL,
     status TEXT DEFAULT 'pending',       -- pending/processing/completed/expired
-    payment_status TEXT DEFAULT 'pending',  -- pending/paid/expired
+    payment_status TEXT DEFAULT 'pending',  -- pending/free/balance/paid/expired/failed
     alipay_trade_no TEXT,
     alipay_amount REAL,
     alipay_qr_code TEXT,
@@ -364,9 +376,19 @@ CREATE TABLE orders (
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
 );
+
+CREATE TABLE activation_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    word_quota INTEGER NOT NULL,
+    status TEXT DEFAULT 'unused',           -- unused/redeemed
+    created_at TEXT NOT NULL,
+    redeemed_by INTEGER REFERENCES users(id),
+    redeemed_at TEXT
+);
 ```
 
-> **向后兼容**：`Order.init_table()` 在旧数据库上自动执行 `ALTER TABLE ADD COLUMN` 添加缺失字段。
+> **向后兼容**：`User.init_table()` 会给旧 `users` 表补 `word_balance`；`Order.init_table()` 会补支付字段；`ActivationCode.init_table()` 会创建 `activation_codes`。
 
 ---
 
@@ -391,11 +413,15 @@ flowchart LR
 
     subgraph Payment["支付"]
         C1[POST /api/rewrite]
-        C2[POST /api/confirm-payment]
         C3[POST /api/create-payment]
         C4[GET /api/payment-status/:id]
         C5[POST /api/webhook/alipay]
         C6[POST /api/test/mock-payment/:id]
+    end
+
+    subgraph Activation["激活码/余额"]
+        X1[POST /api/redeem-code]
+        X2[GET /api/user/balance]
     end
 
     subgraph Order["订单"]
@@ -432,12 +458,20 @@ flowchart LR
 
 | 方法 | 路径 | 请求体 | 响应 | 说明 |
 |------|------|--------|------|------|
-| POST | `/api/rewrite` | `{text, mode}` | `{order: {order_id, price}}` | 旧版改写（<600 词） |
-| POST | `/api/confirm-payment` | `{payment_token}` | `{original, rewritten, improvement}` | 旧版确认支付+同步改写 |
+| POST | `/api/rewrite` | `{text, mode}` | 成功: `{success, original, rewritten, payment_status, balance_remaining?}`；余额不足: `{need_payment, balance, shortfall}` | 免费改写 / 余额改写 / 支付提示三分支 |
 | POST | `/api/create-payment` | `{text, mode}` | `{order: {order_id, qr_code}}` | 新版创建 QR 支付 |
 | GET | `/api/payment-status/<id>` | — | `{payment_status, status, rewritten?}` | 轮询支付/改写状态 |
 | POST | `/api/webhook/alipay` | 支付宝签名参数 | `"success"` / `"fail"` | 支付宝异步通知 |
 | POST | `/api/test/mock-payment/<id>` | — | `{success}` | Mock 模拟支付 |
+
+> `POST /api/confirm-payment` 是旧版同步支付确认流程，当前主流程不再使用。
+
+#### 激活码/余额接口
+
+| 方法 | 路径 | 请求体 | 响应 | 说明 |
+|------|------|--------|------|------|
+| POST | `/api/redeem-code` | `{code}` | `{success, balance, message}` 或 `{error}` | 兑换激活码，增加用户词数余额 |
+| GET | `/api/user/balance` | — | `{success, balance}` | 查询当前用户词数余额 |
 
 #### 订单接口
 
@@ -452,14 +486,15 @@ flowchart LR
 
 ## 6. 核心流程
 
-### 6.1 渐进式交互流程（核心路径）
+### 6.1 渐进式交互流程（当前核心路径）
 
 ```mermaid
 sequenceDiagram
     participant User as 用户
     participant Browser as 浏览器
-    participant App as Flask app.py
+    participant App as Flask app
     participant AI as ai_checker.py
+    participant AC as ActivationCode
     participant PAdapter as PaymentAdapter
     participant Alipay as 支付宝网关
     participant DB as SQLite
@@ -482,14 +517,37 @@ sequenceDiagram
         App-->>Browser: {user}
     end
 
-    alt 免费改写 (price === 0)
+    opt 用户有激活码
+        User->>Browser: 点击「兑换码」输入 code
+        Browser->>App: POST /api/redeem-code
+        App->>AC: status unused -> redeemed
+        App->>DB: User.word_balance += word_quota
+        App-->>Browser: {balance, message}
+    end
+
+    alt 免费改写 (word_count <= FREE_WORD_LIMIT)
         Browser->>App: POST /api/rewrite {text, mode}
         App->>App: humanize + analyze
-        App-->>Browser: {original, rewritten, improvement}
+        App->>DB: Order.create(payment_status=free)
+        App-->>Browser: {success, original, rewritten, payment_status=free}
         Browser->>Browser: 展示改写对比结果
 
-    else 付费改写 (price > 0)
-        Note over User, Thread: ③ 创建支付订单 + 二维码即显示
+    else 超出免费额度且余额足够
+        Browser->>App: POST /api/rewrite {text, mode}
+        App->>DB: UPDATE users SET word_balance = word_balance - words WHERE word_balance >= words
+        App->>App: humanize + analyze
+        alt 改写成功
+            App->>DB: Order.create(payment_status=balance)
+            App-->>Browser: {success, payment_status=balance, balance_remaining}
+        else 改写/检测失败
+            App->>DB: User.word_balance += deducted_words
+            App-->>Browser: 500 {error}
+        end
+
+    else 超出免费额度且余额不足
+        Browser->>App: POST /api/rewrite {text, mode}
+        App-->>Browser: 402 {need_payment, balance, shortfall}
+        Note over User, Thread: ③ 创建支付订单 + 二维码
         Browser->>App: POST /api/create-payment {text, mode}
         App->>DB: Order.create_payment_record(status=pending)
         App->>PAdapter: create_prepay_order(order_id, amount)
@@ -524,54 +582,60 @@ sequenceDiagram
     end
 ```
 
-### 6.2 旧版模态框支付流程（<600 词，兼容路径）
+### 6.2 激活码与余额模型
 
 ```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant Browser as 浏览器
-    participant App as Flask app.py
-    participant AI as ai_checker.py
-    participant HAdapter as HumanizerAdapter
-    participant PAdapter as PaymentAdapter
-    participant DB as SQLite
+erDiagram
+    users ||--o{ activation_codes : redeems
+    users ||--o{ orders : owns
 
-    Note over User, DB: ① 文本检测
-    User->>Browser: 粘贴文本/上传文件
-    Browser->>App: POST /api/analyze
-    App->>AI: analyze_text(text)
-    AI-->>App: {ai_score, ...}
-    App-->>Browser: {analysis, original_format, ...}
-    Browser->>Browser: 显示检测结果
+    users {
+        integer id
+        string email
+        string password_hash
+        integer word_balance
+        string created_at
+    }
 
-    Note over User, DB: ② 发起改写+支付
-    User->>Browser: 点击「自动改写」→ 支付模态框
-    Browser->>App: POST /api/rewrite {text, mode}
-    App->>App: 计算价格，生成 order_id
-    App-->>Browser: {order_id, price, word_count}
+    activation_codes {
+        integer id
+        string code
+        integer word_quota
+        string status
+        string created_at
+        integer redeemed_by
+        string redeemed_at
+    }
 
-    User->>Browser: 确认支付
-    Browser->>App: POST /api/confirm-payment {payment_token: "PAY-..."}
-    App->>PAdapter: verify_payment(payment_token)
-    PAdapter-->>App: True
-    App->>HAdapter: humanize(text, mode)
-    HAdapter-->>App: humanized_text
-    App->>AI: analyze_text(humanized)
-    AI-->>App: {ai_score, ...}
-    App->>DB: Order.create(status=completed)
-    DB-->>App: OK
-    App-->>Browser: {original, rewritten, improvement}
-
-    Note over User, DB: ③ 格式保持下载
-    User->>Browser: 点击「下载」
-    Browser->>App: GET /api/download/<order_id>?format=docx
-    App->>DB: SELECT * FROM orders WHERE order_id=?
-    DB-->>App: order row
-    App->>App: 根据格式生成对应文件
-    App-->>Browser: 文件下载
+    orders {
+        integer id
+        integer user_id
+        string order_id
+        integer word_count
+        real price
+        string status
+        string payment_status
+        string created_at
+        string expires_at
+    }
 ```
 
-### 6.3 用户注册/登录流程
+约束：
+
+- `users.word_balance` 是当前账户可用词数余额。
+- `activation_codes.status` 当前使用 `unused` / `redeemed`。
+- 激活码兑换和余额增加在同一事务中完成。
+- 余额扣减使用条件更新，防止并发超扣。
+- 改写失败时，`/api/rewrite` 会退回本次余额扣减。
+
+### 6.3 旧版同步支付流程（已废弃）
+
+旧版 `/api/confirm-payment` + 同步改写流程不再作为当前主线。当前主线只保留：
+
+- 免费/余额改写：`POST /api/rewrite`
+- 余额不足支付：`POST /api/create-payment` + `GET /api/payment-status/<id>`
+
+### 6.4 用户注册/登录流程
 
 ```mermaid
 sequenceDiagram
@@ -612,7 +676,7 @@ sequenceDiagram
     end
 ```
 
-### 6.4 订单历史 + 7 天免费重改写
+### 6.5 订单历史 + 7 天免费重改写
 
 ```mermaid
 sequenceDiagram
@@ -658,18 +722,27 @@ sequenceDiagram
     end
 ```
 
-### 6.5 支付状态机
+### 6.6 订单支付/改写状态机
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending: 创建订单
+    [*] --> free: 免费改写完成
+    [*] --> balance: 余额改写完成
+    [*] --> pending: 创建支付订单
     pending --> paid: 支付成功\n(webhook/confirm)
     pending --> expired: 超时 30 分钟
     paid --> processing: 启动后台改写
     processing --> completed: 改写完成
     processing --> expired: 改写超时
+    free --> [*]
+    balance --> [*]
     completed --> [*]
     expired --> [*]
+
+    note right of balance
+        使用 users.word_balance
+        订单 payment_status=balance
+    end note
 
     note right of pending
         等待用户支付
@@ -694,7 +767,7 @@ stateDiagram-v2
     end note
 ```
 
-### 6.6 交互流程决策
+### 6.7 交互流程决策
 
 ```mermaid
 flowchart TD
@@ -703,13 +776,16 @@ flowchart TD
     
     B -->|点击改写| D{已登录?}
     D -->|否| E[弹出登录/注册]
-    E -->|登录成功| F{价格?}
+    E -->|登录成功| F{词数 <= FREE_WORD_LIMIT?}
     D -->|是| F
     
     F -->|免费| G[POST /api/rewrite]
     G -->|同步改写| H[展示对比结果]
     
-    F -->|付费| I[POST /api/create-payment]
+    F -->|超出免费额度| BAL{余额足够?}
+    BAL -->|是| BR[POST /api/rewrite<br>扣余额改写]
+    BR --> H
+    BAL -->|否| I[POST /api/create-payment]
     I --> J[创建 pending 订单<br>生成 QR 码]
     J --> K[前端渲染 QR + 3s 轮询]
     K --> L[用户扫码支付]
@@ -836,18 +912,21 @@ mindmap
 
 | 文件 | 说明 |
 |------|------|
-| `models.py` | SQLite 数据模型 + `init_db()` + 支付方法 |
+| `app/models.py` | SQLite 数据模型 + `init_db()` + 支付/余额/激活码方法 |
 | `payment_adapter.py` | 支付适配器 (Mock + Alipay) |
 | `humanizer_adapter.py` | 改写适配器 (RuleBased + Api 占位) |
 | `templates/orders.html` | 订单历史页面 |
+| `app/routes/activation.py` | 激活码兑换与余额查询接口 |
 
 #### 修改文件
 
 | 文件 | 变更内容 |
 |------|----------|
-| `app.py` | DB 初始化、auth 路由、QR 码支付、Webhook、异步改写、下载 API |
-| `templates/index.html` | 导航栏改造、登录/注册模态框、FAQ 更新 |
-| `static/script.js` | 登录/注册、QR 支付渲染、轮询、订单交互 |
+| `app/__init__.py` | 注册 activation blueprint |
+| `admin.py` | 增加激活码生成、列表、统计 Tab |
+| `templates/index.html` | 导航栏余额、兑换码弹窗、登录/注册模态框 |
+| `static/auth.js` | 登录态导航栏 + 余额显示 |
+| `static/main.js` | 免费/余额/支付三分支改写按钮逻辑 |
 | `static/style.css` | 模态框、QR 码区域、订单详情样式 |
 | `requirements.txt` | 新增 alipay-sdk-python，版本号范围约束 |
 
@@ -869,7 +948,7 @@ mindmap
 | **数据库路径** | `instance/aigc_humanizer.db` |
 | **时间格式** | ISO 8601 UTC (`datetime.utcnow().isoformat()`) |
 | **API 响应** | 成功: `{success: true, ...}`；失败: `{error: "消息"}` |
-| **价格** | `PRICE_PER_1000_WORDS = 14.9`, `FREE_WORD_LIMIT = 200`, `FREE_DAILY_REWRITES = 2` |
+| **价格/额度** | `PRICE_PER_1000_WORDS = 14.9`, `FREE_WORD_LIMIT = 100`, `FREE_DAILY_REWRITES = 2`; 兑换码写入 `users.word_balance` |
 | **密码安全** | `werkzeug.security.generate_password_hash` (pbkdf2:sha256) |
 | **订单过期** | `expires_at = created_at + 7 days`；未支付 30 分钟过期 |
 | **适配器配置** | `PAYMENT_ADAPTER=mock/alipay`, `HUMANIZER_ADAPTER=rule_based/api` |

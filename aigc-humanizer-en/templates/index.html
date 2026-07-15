@@ -69,8 +69,9 @@
                 <a href="#pricing" class="nav-link">定价</a>
                 <a href="#faq" class="nav-link">常见问题</a>
                 <!-- Auth-dependent elements -->
-                <a href="/orders" class="nav-link" id="orders-link" style="display:none;">订单历史</a>
+                <a href="/orders" class="nav-link" id="orders-link" style="display:none;">个人账户</a>
                 <span class="nav-user" id="nav-user" style="display:none;"></span>
+                <span class="nav-balance" id="nav-balance" style="display:none;" title="账户词数余额"></span>
                 <button class="btn btn-outline btn-sm" id="login-btn" onclick="showAuthModal('login')" aria-label="登录账户">登录</button>
                 <button class="btn btn-outline btn-sm" id="logout-btn" style="display:none;" onclick="logout()" aria-label="退出登录">退出</button>
             </div>
@@ -222,7 +223,7 @@
             <button class="modal-close" onclick="closePaymentModal()" aria-label="关闭支付窗口">&times;</button>
             <div class="modal-body">
                 <div class="modal-icon">💎</div>
-                <h3 class="modal-title">改写降 AI 率</h3>
+                <h3 class="modal-title">充值并开始改写</h3>
 
                 <!-- Two-column payment layout: left = stats, right = QR -->
                 <div class="payment-split-layout">
@@ -230,19 +231,28 @@
                     <div class="payment-summary">
                         <div class="payment-details">
                             <div class="payment-row">
-                                <span>词数</span>
+                                <span>本次任务</span>
                                 <span id="pay-word-count">0 词</span>
                             </div>
                             <div class="payment-row ai-score-row">
                                 <span>预估 AI 率</span>
                                 <span id="ai-score-display" class="ai-score-value">0%</span>
                             </div>
+                            <div class="payment-row">
+                                <span>当前余额</span>
+                                <span id="pay-current-balance">0 词</span>
+                            </div>
+                            <div class="payment-row">
+                                <span>本次充值</span>
+                                <span id="pay-recharge-words">0 词</span>
+                            </div>
                             <div class="payment-row total">
-                                <span>费用</span>
+                                <span>应付金额</span>
                                 <span id="pay-price">¥0.00</span>
                             </div>
                         </div>
-                        <p class="payment-note">💡 学术改写模式 · 支付后 7 天内可无限次修改，不达标可退款</p>
+                        <div class="recharge-options" id="recharge-options"></div>
+                        <p class="payment-note">💡 充值到账后将自动扣除本次用量并开始改写</p>
                     </div>
 
                     <!-- Right column: QR code -->
@@ -343,6 +353,32 @@
                     <div class="auth-error" id="register-error"></div>
                     <div class="auth-success" id="register-success"></div>
                     <button class="btn btn-primary btn-lg btn-full" onclick="handleRegister()">注册</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ REDEEM MODAL ============ -->
+    <div class="modal-overlay" id="redeem-modal" style="display:none;">
+        <div class="modal redeem-modal">
+            <button class="modal-close" onclick="closeRedeemModal()" aria-label="关闭兑换窗口">&times;</button>
+            <div class="modal-body">
+                <div class="modal-icon">🎯</div>
+                <h3 class="modal-title">兑换码</h3>
+                <p class="modal-desc">输入兑换码，充值词数余额</p>
+
+                <div class="redeem-input-group">
+                    <input type="text" class="auth-input" id="redeem-code-input" placeholder="输入兑换码，例如 HUMA-XXXX-XXXX" autocomplete="off" style="text-transform:uppercase;letter-spacing:1px;font-family:monospace;">
+                    <button class="btn btn-primary btn-lg btn-full" id="redeem-submit-btn" onclick="handleRedeem()">兑换</button>
+                </div>
+
+                <div class="redeem-error" id="redeem-error"></div>
+                <div class="redeem-success" id="redeem-success"></div>
+
+                <div class="redeem-balance" id="redeem-balance-display" style="display:none;">
+                    <span class="redeem-balance-label">当前词数余额</span>
+                    <span class="redeem-balance-value" id="redeem-balance-value">0</span>
+                    <span class="redeem-balance-unit">词</span>
                 </div>
             </div>
         </div>
@@ -600,6 +636,102 @@ document.querySelectorAll('.nav-link').forEach(link => {
         document.getElementById('menuToggle').classList.remove('open');
     });
 });
+
+/* ========== ACTIVATION CODE / REDEEM ========== */
+
+function showRedeemModal() {
+    // Fetch current balance first
+    _csrfFetch('/api/user/balance')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success !== false) {
+                document.getElementById('redeem-balance-value').textContent = data.balance || 0;
+                document.getElementById('redeem-balance-display').style.display = 'block';
+            }
+        })
+        .catch(() => {});
+
+    document.getElementById('redeem-code-input').value = '';
+    document.getElementById('redeem-error').textContent = '';
+    document.getElementById('redeem-error').style.display = 'none';
+    document.getElementById('redeem-success').textContent = '';
+    document.getElementById('redeem-success').style.display = 'none';
+    document.getElementById('redeem-submit-btn').disabled = false;
+    document.getElementById('redeem-submit-btn').textContent = '兑换';
+
+    const modal = document.getElementById('redeem-modal');
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => document.getElementById('redeem-code-input').focus(), 200);
+}
+
+function closeRedeemModal() {
+    const modal = document.getElementById('redeem-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+}
+
+// Close on overlay click
+document.addEventListener('click', (e) => {
+    const redeemModal = document.getElementById('redeem-modal');
+    if (e.target === redeemModal) closeRedeemModal();
+});
+
+async function handleRedeem() {
+    const input = document.getElementById('redeem-code-input');
+    const code = input.value.trim().toUpperCase();
+    const errorEl = document.getElementById('redeem-error');
+    const successEl = document.getElementById('redeem-success');
+    const btn = document.getElementById('redeem-submit-btn');
+
+    if (!code) {
+        errorEl.textContent = '请输入兑换码';
+        errorEl.style.display = 'block';
+        successEl.style.display = 'none';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '兑换中...';
+    errorEl.style.display = 'none';
+    successEl.style.display = 'none';
+
+    try {
+        const resp = await _csrfFetch('/api/redeem-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            errorEl.textContent = data.error;
+            errorEl.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = '兑换';
+            return;
+        }
+
+        successEl.textContent = data.message;
+        successEl.style.display = 'block';
+        document.getElementById('redeem-balance-value').textContent = data.balance;
+        document.getElementById('redeem-balance-display').style.display = 'block';
+
+        // Update nav balance
+        updateNavBalance(data.balance);
+
+        btn.textContent = '✅ 已兑换';
+        showToast(data.message, 'success');
+    } catch (err) {
+        errorEl.textContent = '网络错误，请重试';
+        errorEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '兑换';
+    }
+}
+
 </script>
 <!-- Baidu Auto Push -->
 <script>

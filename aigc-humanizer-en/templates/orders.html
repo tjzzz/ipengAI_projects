@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>订单历史 - Huma</title>
-    <meta name="description" content="查看 Huma 的订单历史与改写记录。">
+    <title>个人账户 - Huma</title>
+    <meta name="description" content="查看 Huma 账户余额与历史订单。">
     <meta name="robots" content="noindex, follow">
     <link rel="canonical" href="https://ipengai.cn/orders">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='Inter,sans-serif' font-weight='800' font-size='18' fill='white' text-anchor='middle'%3EH%3C/text%3E%3C/svg%3E">
@@ -40,11 +40,17 @@
             <a href="/" class="logo">
                 <img src="{{ url_for('static', filename='logo.svg') }}" alt="Huma" height="32">
             </a>
+            <button class="menu-toggle" id="menuToggle" aria-label="菜单" onclick="toggleAccountMenu()">
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+            </button>
             <div class="nav-links">
                 <a href="/#features" class="nav-link">功能</a>
                 <a href="/#pricing" class="nav-link">定价</a>
                 <a href="/#faq" class="nav-link">常见问题</a>
-                <a href="/orders" class="nav-link" id="orders-link" style="display:none;">订单历史</a>
+                <a href="/orders" class="nav-link" id="orders-link" style="display:none;">个人账户</a>
+                <span class="nav-balance" id="nav-balance" style="display:none;" title="账户词数余额"></span>
                 <span class="nav-user" id="nav-user" style="display:none;"></span>
                 <button class="btn btn-outline btn-sm" id="login-btn" onclick="showAuthModal('login')">登录</button>
                 <button class="btn btn-outline btn-sm" id="logout-btn" style="display:none;" onclick="logout()">退出</button>
@@ -58,12 +64,40 @@
             {% if needs_login %}
             <div class="orders-empty" style="padding:100px 24px;">
                 <div class="orders-empty-icon">🔒</div>
-                <div class="orders-empty-text">请登录后查看订单历史</div>
+                <div class="orders-empty-text">请登录后进入个人账户</div>
                 <button class="btn btn-primary btn-lg" onclick="showAuthModal('login')">去登录</button>
             </div>
             {% else %}
-            <div class="orders-header">
-                <h1 class="orders-title">📋 我的订单</h1>
+            <div class="account-header">
+                <div>
+                    <div class="account-eyebrow">PERSONAL ACCOUNT</div>
+                    <h1 class="orders-title">个人账户</h1>
+                    <p class="account-subtitle" id="account-email">管理词数余额与历史订单</p>
+                </div>
+                <a href="/" class="btn btn-primary">开始新任务</a>
+            </div>
+
+            <div class="account-grid">
+                <div class="account-card balance-card">
+                    <div class="account-card-label">当前可用余额</div>
+                    <div class="account-balance"><span id="account-balance-value">--</span><small>词</small></div>
+                    <div class="account-card-note">改写时自动扣除，余额不足可扫码补足</div>
+                </div>
+                <div class="account-card redeem-card">
+                    <div class="account-card-label">兑换充值码</div>
+                    <div class="account-redeem-row">
+                        <input type="text" class="auth-input" id="account-redeem-code" placeholder="输入 HUMA 兑换码" autocomplete="off">
+                        <button class="btn btn-primary" id="account-redeem-btn" onclick="redeemFromAccount()">兑换</button>
+                    </div>
+                    <div class="account-redeem-message" id="account-redeem-message"></div>
+                </div>
+            </div>
+
+            <div class="orders-header account-orders-header">
+                <div>
+                    <div class="account-eyebrow">ORDER HISTORY</div>
+                    <h2 class="orders-title">历史订单</h2>
+                </div>
             </div>
 
             <!-- Orders List -->
@@ -162,9 +196,62 @@
             }
             // Now currentUser should be set by checkLoginStatus
             if (currentUser) {
+                document.getElementById('account-email').textContent = currentUser.email;
+                await loadAccountSummary();
                 loadOrders(1);
             }
         });
+
+        async function loadAccountSummary() {
+            try {
+                const resp = await fetch('/api/user/balance');
+                const data = await resp.json();
+                if (resp.ok) {
+                    document.getElementById('account-balance-value').textContent = Number(data.balance || 0).toLocaleString('zh-CN');
+                    updateNavBalance(data.balance || 0);
+                }
+            } catch (err) {
+                document.getElementById('account-balance-value').textContent = '加载失败';
+            }
+        }
+
+        function toggleAccountMenu() {
+            document.querySelector('.nav-links').classList.toggle('active');
+            document.getElementById('menuToggle').classList.toggle('open');
+        }
+
+        async function redeemFromAccount() {
+            const input = document.getElementById('account-redeem-code');
+            const button = document.getElementById('account-redeem-btn');
+            const message = document.getElementById('account-redeem-message');
+            const code = input.value.trim().toUpperCase();
+            if (!code) {
+                message.className = 'account-redeem-message error';
+                message.textContent = '请输入兑换码';
+                return;
+            }
+            button.disabled = true;
+            button.textContent = '兑换中...';
+            try {
+                const resp = await _csrfFetch('/api/redeem-code', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({code})
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || '兑换失败');
+                message.className = 'account-redeem-message success';
+                message.textContent = data.message;
+                input.value = '';
+                await loadAccountSummary();
+            } catch (err) {
+                message.className = 'account-redeem-message error';
+                message.textContent = err.message;
+            } finally {
+                button.disabled = false;
+                button.textContent = '兑换';
+            }
+        }
     </script>
     {% endif %}
 </body>

@@ -10,6 +10,7 @@ import threading
 from datetime import timedelta
 
 from flask import Flask, jsonify
+from flask_wtf.csrf import CSRFError
 
 
 # Configure logging: structured format for production debugging
@@ -105,7 +106,7 @@ def create_app():
 
     # ── Register all blueprints ──
     from app.routes import main_bp, auth_bp, analysis_bp, rewrite_bp, \
-        payment_bp, download_bp, orders_bp
+        payment_bp, download_bp, orders_bp, activation_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)
@@ -114,6 +115,7 @@ def create_app():
     app.register_blueprint(payment_bp)
     app.register_blueprint(download_bp)
     app.register_blueprint(orders_bp)
+    app.register_blueprint(activation_bp)
 
     # ── Teardown: close database connection ──
     from app.helpers import close_db
@@ -129,12 +131,16 @@ def create_app():
         return response
 
     # ── Global error handlers ──
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        logging.warning(f"CSRF validation failed: {e.description}")
+        response = jsonify({"error": "安全验证已过期，请重试"})
+        response.headers['X-CSRF-Error'] = '1'
+        response.headers['Cache-Control'] = 'no-store, private'
+        return response, 400
+
     @app.errorhandler(400)
     def handle_400(e):
-        # Log the actual error for debugging CSRF issues
-        err_desc = str(e)
-        if 'csrf' in err_desc.lower():
-            logging.warning(f"CSRF validation failed: {err_desc}")
         return jsonify({"error": "请求格式错误"}), 400
 
     @app.errorhandler(401)

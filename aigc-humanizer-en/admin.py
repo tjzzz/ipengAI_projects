@@ -13,6 +13,7 @@ Authentication:
 
 import os
 import sqlite3
+import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -205,6 +206,151 @@ def api_order_detail(order_id):
 
 
 # ============================================================
+#  User Management
+# ============================================================
+
+@admin_app.route('/admin/api/users')
+@login_required
+def api_users():
+    """List users with aggregated stats: balance, total recharge, total spent, order count."""
+    search = (request.args.get('search') or '').strip()
+
+    # Use a regular (non-read-only) connection to query aggregate functions.
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    try:
+        where_clause = ''
+        params = []
+        if search:
+            where_clause = 'WHERE u.email LIKE ?'
+            params = [f'%{search}%']
+
+        # Per-user aggregation: balance + total recharge + total spent (in words)
+        sql = f'''
+            SELECT
+                u.id, u.email, u.word_balance, u.created_at, u.last_login_at,
+                COALESCE(SUM(CASE WHEN bt.transaction_type = 'payment_recharge' THEN bt.words ELSE 0 END), 0) AS total_recharged,
+                COALESCE(SUM(CASE WHEN bt.transaction_type = 'rewrite_consumption' THEN ABS(bt.words) ELSE 0 END), 0) AS total_spent,
+                (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) AS order_count,
+                (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id AND o.payment_status = 'paid') AS paid_count
+            FROM users u
+            LEFT JOIN balance_transactions bt ON bt.user_id = u.id
+            {where_clause}
+            GROUP BY u.id
+            ORDER BY u.id DESC
+        '''
+        users = [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+        # Overall stats
+        stats_row = conn.execute('''
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN word_balance > 0 THEN 1 ELSE 0 END) AS with_balance,
+                COALESCE(SUM(word_balance), 0) AS total_balance,
+                COALESCE((
+                    SELECT SUM(ABS(words)) FROM balance_transactions
+                    WHERE transaction_type = 'rewrite_consumption'
+                ), 0) AS total_spent
+            FROM users
+        ''').fetchone()
+        stats = dict(stats_row) if stats_row else {
+            'total': 0, 'with_balance': 0, 'total_balance': 0, 'total_spent': 0
+        }
+
+        return jsonify({'stats': stats, 'users': users})
+    finally:
+        conn.close()
+
+
+# ============================================================
+#  Activation Code Management
+# ============================================================
+
+@admin_app.route('/admin/api/activation-codes', methods=['GET', 'POST'])
+@login_required
+def api_activation_codes():
+    """GET: list codes with stats. POST: generate new codes."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    if request.method == 'GET':
+        try:
+            # Stats
+            total = conn.execute("SELECT COUNT(*) as c FROM activation_codes").fetchone()['c']
+            used = conn.execute("SELECT COUNT(*) as c FROM activation_codes WHERE status = 'redeemed'").fetchone()['c']
+            unused = conn.execute("SELECT COUNT(*) as c FROM activation_codes WHERE status = 'unused'").fetchone()['c']
+            total_words = conn.execute(
+                "SELECT COALESCE(SUM(word_quota), 0) as s FROM activation_codes WHERE status = 'redeemed'"
+            ).fetchone()['s']
+
+            # List codes
+            page = int(request.args.get('page', 1))
+            per_page = 50
+            offset = (page - 1) * per_page
+            count_row = conn.execute("SELECT COUNT(*) as total FROM activation_codes").fetchone()
+            total_count = count_row['total'] if count_row else 0
+            cursor = conn.execute(
+                """SELECT ac.*, u.email as redeemed_by_email
+                   FROM activation_codes ac
+                   LEFT JOIN users u ON ac.redeemed_by = u.id
+                   ORDER BY ac.created_at DESC LIMIT ? OFFSET ?""",
+                (per_page, offset)
+            )
+            codes = []
+            for row in cursor.fetchall():
+                c = dict(row)
+                c['created_at'] = c.get('created_at', '')
+                c['redeemed_at'] = c.get('redeemed_at', '')
+                codes.append(c)
+
+            return jsonify({
+                'stats': {
+                    'total': total, 'used': used, 'unused': unused,
+                    'total_redeemed_words': total_words
+                },
+                'codes': codes,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': max((total_count + per_page - 1) // per_page, 1),
+            })
+        finally:
+            conn.close()
+
+    # POST: generate new codes
+    data = request.get_json(silent=True) or {}
+    count = int(data.get('count', 10))
+    word_quota = int(data.get('word_quota', 2000))
+
+    if count < 1 or count > 100:
+        return jsonify({'error': '数量在 1-100 之间'}), 400
+    if word_quota < 100 or word_quota > 100000:
+        return jsonify({'error': '词数在 100-100000 之间'}), 400
+
+    try:
+        generated = []
+        for _ in range(count):
+            # Format: HUMA-XXXX-XXXX-XXXX
+            part1 = secrets.token_hex(2).upper()
+            part2 = secrets.token_hex(2).upper()
+            part3 = secrets.token_hex(2).upper()
+            code = f"HUMA-{part1}-{part2}-{part3}"
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO activation_codes (code, word_quota, created_at) VALUES (?, ?, ?)",
+                (code, word_quota, now)
+            )
+            generated.append({'code': code, 'word_quota': word_quota})
+        conn.commit()
+        return jsonify({'success': True, 'count': count, 'word_quota': word_quota, 'codes': generated})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+# ============================================================
 #  Jinja2 Templates (inline to keep everything in one file)
 # ============================================================
 
@@ -301,7 +447,21 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             cursor: pointer; font-weight: 500;
         }
         .btn-logout:hover { background: #fecaca; }
+        .tabs {
+            display: flex; gap: 0; border-bottom: 1px solid #e2e8f0;
+            background: #fff; padding: 0 24px;
+        }
+        .tab-btn {
+            padding: 12px 24px; border: none; background: none;
+            font-size: 0.9rem; font-weight: 500; color: #64748b;
+            cursor: pointer; border-bottom: 2px solid transparent;
+            transition: all 0.15s; font-family: inherit;
+        }
+        .tab-btn:hover { color: #1e293b; }
+        .tab-btn.active { color: #4f46e5; border-bottom-color: #4f46e5; }
         .main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
         /* Toolbar */
         .toolbar {
             display: flex; align-items: center; gap: 10px; margin-bottom: 24px;
@@ -423,6 +583,8 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         .badge-failed { background: #fee2e2; color: #dc2626; }
         .badge-completed { background: #dbeafe; color: #2563eb; }
         .badge-processing { background: #f3e8ff; color: #9333ea; }
+        .badge-balance { background: #fef3c7; color: #b45309; }
+        .badge-free { background: #ecfeff; color: #0e7490; }
         /* Pagination */
         .pagination {
             display: flex; align-items: center; justify-content: center;
@@ -456,6 +618,14 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         </div>
     </div>
 
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('orders')" id="tab-orders">📋 订单</button>
+        <button class="tab-btn" onclick="switchTab('activation')" id="tab-activation">🎯 激活码</button>
+        <button class="tab-btn" onclick="switchTab('users')" id="tab-users">👤 用户</button>
+    </div>
+
+    <!-- ============ TAB: ORDERS ============ -->
+    <div class="tab-content active" id="content-orders">
     <div class="main">
         <!-- Date range picker -->
         <div class="toolbar">
@@ -483,23 +653,23 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
                 <div class="value" id="stat-total">0</div>
             </div>
             <div class="summary-card">
-                <div class="label">已支付</div>
+                <div class="label">扫码已支付</div>
                 <div class="value" id="stat-paid" style="color:#16a34a;">0</div>
             </div>
             <div class="summary-card">
-                <div class="label">待支付</div>
+                <div class="label">扫码待支付</div>
                 <div class="value pending" id="stat-pending">0</div>
             </div>
             <div class="summary-card">
-                <div class="label">已过期</div>
+                <div class="label">支付已过期</div>
                 <div class="value" id="stat-expired" style="color:#64748b;">0</div>
             </div>
             <div class="summary-card">
-                <div class="label">失败</div>
+                <div class="label">支付失败</div>
                 <div class="value" id="stat-failed" style="color:#dc2626;">0</div>
             </div>
             <div class="summary-card">
-                <div class="label">营收 (¥)</div>
+                <div class="label">实收营收 (¥)</div>
                 <div class="value revenue" id="stat-revenue">0.00</div>
             </div>
         </div>
@@ -523,9 +693,10 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
                         <th>用户</th>
                         <th>来源</th>
                         <th>字数</th>
-                        <th>金额</th>
-                        <th>支付</th>
-                        <th>状态</th>
+                        <th>金额 / 消耗</th>
+                        <th>支付方式</th>
+                        <th>支付状态</th>
+                        <th>任务状态</th>
                         <th>创建时间</th>
                     </tr>
                 </thead>
@@ -546,26 +717,149 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             </div>
         </div>
     </div>
+    </div>
+
+    <!-- ============ TAB: ACTIVATION CODES ============ -->
+    <div class="tab-content" id="content-activation">
+    <div class="main">
+        <div class="toolbar">
+            <h2 style="font-size:1rem;font-weight:600;margin-right:16px;">🎯 激活码管理</h2>
+            <label>生成数量：</label>
+            <input type="number" id="gen-count" value="10" min="1" max="100" style="width:70px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.9rem;">
+            <label>每码词数：</label>
+            <input type="number" id="gen-words" value="2000" min="100" max="100000" step="100" style="width:90px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.9rem;">
+            <button class="btn-query" onclick="generateCodes()">生成激活码</button>
+            <span id="gen-result" style="font-size:0.85rem;color:#059669;margin-left:12px;"></span>
+        </div>
+
+        <!-- Activation stats -->
+        <div class="summary" id="activation-summary">
+            <div class="summary-card">
+                <div class="label">总码数</div>
+                <div class="value" id="ac-total">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">已使用</div>
+                <div class="value" id="ac-used" style="color:#16a34a;">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">未使用</div>
+                <div class="value" id="ac-unused" style="color:#4f46e5;">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">已兑换词数</div>
+                <div class="value" id="ac-words" style="color:#059669;">0</div>
+            </div>
+        </div>
+
+        <!-- Codes table -->
+        <div class="table-wrapper">
+            <div class="table-header">
+                <h2>激活码列表</h2>
+                <span class="count-badge" id="ac-count-badge">0 条</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>激活码</th>
+                        <th>词数</th>
+                        <th>状态</th>
+                        <th>兑换用户</th>
+                        <th>创建时间</th>
+                        <th>兑换时间</th>
+                    </tr>
+                </thead>
+                <tbody id="ac-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+    </div>
+
+    <!-- ============ TAB: USERS ============ -->
+    <div class="tab-content" id="content-users">
+    <div class="main">
+        <!-- Search toolbar -->
+        <div class="toolbar">
+            <h2 style="font-size:1rem;font-weight:600;margin-right:16px;">👤 用户管理</h2>
+            <label>邮箱搜索：</label>
+            <input type="text" id="user-search" placeholder="输入邮箱或邮箱前缀..." style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.9rem;width:240px;" onkeyup="if(event.key==='Enter') loadUsers();">
+            <button class="btn-query" onclick="loadUsers()">查询</button>
+            <span id="users-result" style="font-size:0.85rem;color:#64748b;margin-left:12px;"></span>
+        </div>
+
+        <!-- User stats -->
+        <div class="summary" id="users-summary">
+            <div class="summary-card">
+                <div class="label">总用户数</div>
+                <div class="value" id="u-total">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">有余额用户</div>
+                <div class="value" id="u-with-balance" style="color:#4f46e5;">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">总余额（词）</div>
+                <div class="value" id="u-total-balance" style="color:#059669;">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">已消费（词）</div>
+                <div class="value" id="u-total-spent" style="color:#ca8a04;">0</div>
+            </div>
+        </div>
+
+        <!-- Users table -->
+        <div class="table-wrapper">
+            <div class="table-header">
+                <h2>用户列表</h2>
+                <span class="count-badge" id="users-count-badge">0 条</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>邮箱</th>
+                        <th>余额（词）</th>
+                        <th>累计充值</th>
+                        <th>累计消费</th>
+                        <th>订单数</th>
+                        <th>扫码支付订单</th>
+                        <th>注册时间</th>
+                        <th>最后登录</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+    </div>
 
     <script>
         let currentPage = 1;
         let totalPages = 1;
         let expandedOrderId = null;
+        let currentTab = 'orders';
 
         const STATUS_BADGE = {
             paid: 'badge-paid', pending: 'badge-pending',
-            expired: 'badge-expired', failed: 'badge-failed'
+            expired: 'badge-expired', failed: 'badge-failed',
+            balance: 'badge-balance', free: 'badge-free'
         };
         const STATUS_LABEL = {
-            paid: '已支付', pending: '待支付', expired: '已过期', failed: '失败'
+            paid: '已支付', pending: '待支付', expired: '已过期',
+            failed: '支付失败', balance: '已扣余额', free: '无需支付'
+        };
+        const PAYMENT_METHOD_LABEL = {
+            paid: '扫码充值', pending: '扫码充值', expired: '扫码充值',
+            failed: '扫码充值', balance: '余额支付', free: '免费'
         };
         const ORDER_STATUS_BADGE = {
             completed: 'badge-completed', processing: 'badge-processing',
-            pending: 'badge-pending', failed: 'badge-failed', expired: 'badge-expired'
+            pending: 'badge-pending', failed: 'badge-failed', expired: 'badge-expired',
+            awaiting_balance: 'badge-balance'
         };
         const ORDER_STATUS_LABEL = {
             completed: '已完成', processing: '处理中', pending: '待处理',
-            failed: '失败', expired: '已过期'
+            failed: '处理失败', expired: '已过期', awaiting_balance: '余额待补足'
         };
 
         function fmtDate(d) {
@@ -675,21 +969,31 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             for (const o of orders) {
                 const ps = o.payment_status || 'pending';
                 const ss = o.status || 'pending';
+                const paymentMethod = PAYMENT_METHOD_LABEL[ps] || '其他';
+                let amountDisplay = `¥${(o.price || 0).toFixed(2)}`;
+                if (ps === 'balance') {
+                    amountDisplay = `消耗 ${o.balance_words_used || o.word_count || 0} 词`;
+                } else if (ps === 'free') {
+                    amountDisplay = '免费';
+                }
                 html += `<tr class="row-order" onclick="toggleDetail('${escapeHtml(o.order_id)}')" id="row-${escapeHtml(o.order_id)}">
                     <td style="font-family:monospace;font-size:0.78rem;">${escapeHtml(o.order_id)}</td>
                     <td>${escapeHtml(o.user_email || '游客')}</td>
                     <td style="font-family:monospace;font-size:0.75rem;color:#64748b;">${escapeHtml(o.original_format || 'txt')}</td>
                     <td>${o.word_count || '-'}</td>
-                    <td>¥${(o.price || 0).toFixed(2)}</td>
+                    <td>${amountDisplay}</td>
+                    <td><span class="badge ${STATUS_BADGE[ps] || 'badge-pending'}">${paymentMethod}</span></td>
                     <td><span class="badge ${STATUS_BADGE[ps] || 'badge-pending'}">${STATUS_LABEL[ps] || ps}</span></td>
                     <td><span class="badge ${ORDER_STATUS_BADGE[ss] || 'badge-pending'}">${ORDER_STATUS_LABEL[ss] || ss}</span></td>
                     <td style="font-size:0.78rem;color:#64748b;">${formatTime(o.created_at)}</td>
                 </tr>`;
                 html += `<tr class="row-detail" id="detail-${escapeHtml(o.order_id)}" style="display:none;">
-                    <td colspan="8">
+                    <td colspan="9">
                         <div class="detail-meta">
                             <span>文件: ${escapeHtml(o.original_filename || '-')}</span>
                             <span>模式: ${escapeHtml(o.mode || 'academic')}</span>
+                            <span>充值词数: ${o.recharge_words || '-'}</span>
+                            <span>余额消耗: ${o.balance_words_used || '-'}</span>
                             <span>原始评分: ${o.original_score != null ? o.original_score + '%' : '-'}</span>
                             <span>改写评分: ${o.rewritten_score != null ? o.rewritten_score + '%' : '-'}</span>
                             <span>支付时间: ${o.paid_at ? formatTime(o.paid_at) : '-'}</span>
@@ -762,6 +1066,140 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 
         // Load on page ready
         loadOrders();
+    </script>
+
+    <script>
+    /* ========== TAB SWITCHING ========== */
+    function switchTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.getElementById('tab-' + tab).classList.add('active');
+        document.getElementById('content-' + tab).classList.add('active');
+        if (tab === 'activation') loadActivationCodes();
+        if (tab === 'users') loadUsers();
+    }
+
+    /* ========== ACTIVATION CODES ========== */
+    async function loadActivationCodes() {
+        try {
+            const resp = await fetch('/admin/api/activation-codes');
+            const data = await resp.json();
+            if (data.error) { showError(data.error); return; }
+
+            // Stats
+            document.getElementById('ac-total').textContent = data.stats.total;
+            document.getElementById('ac-used').textContent = data.stats.used;
+            document.getElementById('ac-unused').textContent = data.stats.unused;
+            document.getElementById('ac-words').textContent = data.stats.total_redeemed_words;
+            document.getElementById('ac-count-badge').textContent = data.stats.total + ' 条';
+
+            // Table
+            const tbody = document.getElementById('ac-tbody');
+            if (data.codes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">暂无激活码</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.codes.map(c => {
+                const statusHtml = c.status === 'redeemed'
+                    ? '<span class="badge badge-paid">已使用</span>'
+                    : '<span class="badge badge-pending">未使用</span>';
+                return `<tr>
+                    <td style="font-family:monospace;font-weight:600;">${escapeHtml(c.code)}</td>
+                    <td>${c.word_quota}</td>
+                    <td>${statusHtml}</td>
+                    <td>${escapeHtml(c.redeemed_by_email || '-')}</td>
+                    <td style="font-size:0.78rem;color:#64748b;">${formatTime(c.created_at)}</td>
+                    <td style="font-size:0.78rem;color:#64748b;">${c.redeemed_at ? formatTime(c.redeemed_at) : '-'}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            showError('加载激活码失败: ' + e.message);
+        }
+    }
+
+    async function generateCodes() {
+        const count = parseInt(document.getElementById('gen-count').value) || 10;
+        const wordQuota = parseInt(document.getElementById('gen-words').value) || 2000;
+        const btn = event.target;
+        const resultEl = document.getElementById('gen-result');
+
+        btn.disabled = true;
+        btn.textContent = '生成中...';
+        resultEl.textContent = '';
+
+        try {
+            const resp = await fetch('/admin/api/activation-codes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count, word_quota: wordQuota })
+            });
+            const data = await resp.json();
+            if (data.error) { showError(data.error); return; }
+
+            resultEl.textContent = `✅ 已生成 ${data.count} 个激活码，每码 ${data.word_quota} 词`;
+            // Show first few codes in result
+            const codes = data.codes.slice(0, 3).map(c => c.code).join(', ');
+            if (data.count > 3) {
+                resultEl.textContent += `（${codes}... 等 ${data.count} 个）`;
+            } else {
+                resultEl.textContent += `（${codes}）`;
+            }
+            loadActivationCodes();
+        } catch (e) {
+            showError('生成失败: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '生成激活码';
+        }
+    }
+
+    /* ========== USERS ========== */
+    async function loadUsers() {
+        const search = document.getElementById('user-search').value.trim();
+        const resultEl = document.getElementById('users-result');
+        resultEl.textContent = '加载中...';
+
+        try {
+            const url = '/admin/api/users' + (search ? `?search=${encodeURIComponent(search)}` : '');
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data.error) { showError(data.error); resultEl.textContent = ''; return; }
+
+            // Stats
+            document.getElementById('u-total').textContent = data.stats.total;
+            document.getElementById('u-with-balance').textContent = data.stats.with_balance || 0;
+            document.getElementById('u-total-balance').textContent = (data.stats.total_balance || 0).toLocaleString();
+            document.getElementById('u-total-spent').textContent = (data.stats.total_spent || 0).toLocaleString();
+            document.getElementById('users-count-badge').textContent = data.users.length + ' 条';
+            resultEl.textContent = `共 ${data.users.length} 个用户`;
+
+            // Table
+            const tbody = document.getElementById('users-tbody');
+            if (data.users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:#94a3b8;">暂无用户</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.users.map(u => {
+                const balance = u.word_balance || 0;
+                const balanceColor = balance > 0 ? '#059669' : '#94a3b8';
+                return `<tr>
+                    <td>${u.id}</td>
+                    <td style="font-family:monospace;font-size:0.85rem;">${escapeHtml(u.email)}</td>
+                    <td style="font-weight:600;color:${balanceColor};">${balance.toLocaleString()}</td>
+                    <td style="color:#4f46e5;">+${(u.total_recharged || 0).toLocaleString()}</td>
+                    <td style="color:#ca8a04;">-${(u.total_spent || 0).toLocaleString()}</td>
+                    <td>${u.order_count}</td>
+                    <td>${u.paid_count}</td>
+                    <td style="font-size:0.78rem;color:#64748b;">${formatTime(u.created_at)}</td>
+                    <td style="font-size:0.78rem;color:#64748b;">${u.last_login_at ? formatTime(u.last_login_at) : '<span style="color:#cbd5e1;">从未登录</span>'}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            showError('加载用户失败: ' + e.message);
+            document.getElementById('users-result').textContent = '';
+        }
+    }
     </script>
 </body>
 </html>"""

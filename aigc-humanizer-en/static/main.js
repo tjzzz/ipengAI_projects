@@ -137,33 +137,6 @@ async function handleAnalyzeResponse(data) {
     // Baidu Tongji: track analysis complete
     if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'engagement', 'analyze_complete', '', aiScore]);
 
-    // Pre-create payment order for logged-in paid users so QR is ready instantly
-    if (currentUser && price > 0) {
-        precreatePaymentOrder(wordCount, price, data.mode || 'academic');
-    }
-}
-
-/* ========== BACKGROUND PRE-CREATE PAYMENT ========== */
-async function precreatePaymentOrder(wordCount, price, mode) {
-    const text = getCurrentText();
-    if (!text) return;
-    try {
-        const resp = await _csrfFetch('/api/create-payment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, mode: mode || 'academic' })
-        });
-        const data = await resp.json();
-        if (data.order) {
-            sessionStorage.setItem('precreatedPayment', JSON.stringify({
-                order: data.order,
-                wordCount,
-                price
-            }));
-        }
-    } catch (e) {
-        // Silent fail — will create normally on click
-    }
 }
 
 /* ========== REWRITE BUTTON STATE ========== */
@@ -208,22 +181,81 @@ function updateRewriteButton(wordCount, price) {
         }, { signal });
     } else {
         btnText.textContent = '✨ 付费改写 ¥' + price.toFixed(2);
-        btn.addEventListener('click', () => {
-            const cached = sessionStorage.getItem('precreatedPayment');
-            if (cached) {
-                try {
-                    const { order, wordCount: wc, price: pr } = JSON.parse(cached);
-                    sessionStorage.removeItem('precreatedPayment');
-                    showPaymentModalWithAiScore(wc, pr, sessionStorage.getItem('lastAiScore') || 0);
-                    renderPaymentQR(order, wc, pr);
-                    startPaymentPolling(order.order_id);
+        fetch('/api/user/balance')
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                const balance = data ? (data.balance || 0) : 0;
+                if (balance >= wordCount) {
+                    btnText.textContent = `✨ 使用余额改写（${wordCount}词）`;
+                } else if (balance > 0) {
+                    btnText.textContent = `✨ 余额不足，付费改写 ¥${price.toFixed(2)}`;
+                }
+            })
+            .catch(() => {});
+        btn.addEventListener('click', async () => {
+            // Try balance-deducted rewrite first
+            let paymentBalance = 0;
+            let paymentShortfall = wordCount;
+            showLoading();
+            try {
+                const text = getCurrentText();
+                const resp = await _csrfFetch('/api/rewrite', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, mode: 'academic' })
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    hideLoading();
+                    displayRewriteResult(data);
+
+                    // Update balance display if balance was used
+                    if (data.payment_status === 'balance' && data.balance_remaining !== undefined) {
+                        if (typeof updateNavBalance === 'function') {
+                            updateNavBalance(data.balance_remaining);
+                        }
+                        showToast(`✅ 改写完成！余额剩余 ${data.balance_remaining} 词`, 'success');
+                    } else {
+                        showToast('改写完成！', 'success');
+                    }
+
+                    // Baidu Tongji
+                    if (typeof _hmt !== 'undefined') {
+                        _hmt.push(['_trackEvent', 'engagement', 'rewrite_complete', data.payment_status || '']);
+                    }
                     return;
-                } catch (e) { /* fall through to normal flow */ }
+                }
+
+                hideLoading();
+
+                if (data.need_payment) {
+                    paymentBalance = data.balance || 0;
+                    paymentShortfall = data.shortfall || wordCount;
+                    // Balance insufficient — fall through to payment modal
+                    if (data.balance > 0) {
+                        showToast(`余额不足（当前 ${data.balance} 词，还差 ${data.shortfall} 词）`, 'info');
+                    }
+                } else {
+                    showToast(data.error || '改写失败', 'error');
+                    return;
+                }
+            } catch (err) {
+                hideLoading();
+                // If the rewrite call fails, fall through to payment
+                console.warn('Balance rewrite failed, falling back to payment:', err);
             }
-            // Normal flow: create payment on demand
-            showPaymentModalWithAiScore(wordCount, price, sessionStorage.getItem('lastAiScore') || 0);
+
+            // Balance insufficient: create an exact auto-recharge by default.
+            showPaymentModalWithAiScore(
+                wordCount,
+                paymentShortfall / wordCount * price,
+                sessionStorage.getItem('lastAiScore') || 0,
+                paymentBalance,
+                paymentShortfall
+            );
             setTimeout(() => {
-                createPaymentOrder(wordCount, price, 'academic');
+                createPaymentOrder(wordCount, null, 'academic', paymentShortfall);
             }, 300);
         }, { signal });
     }
@@ -509,27 +541,46 @@ function renderOrders(orders, total, page, pages) {
         const improvement = (origScore - rewScore).toFixed(1);
         const improved = improvement > 0 ? 'improved' : 'worsened';
         const improvementSign = improvement > 0 ? '↓' : '↑';
+        const statusMap = {
+            completed: ['已完成', 'completed'],
+            processing: ['处理中', 'processing'],
+            failed: ['处理失败', 'failed'],
+            awaiting_balance: ['待补足余额', 'pending']
+        };
+        const [statusText, statusClass] = statusMap[o.status] || ['处理中', 'processing'];
+        const isCompleted = o.status === 'completed';
 
         const createdDate = o.created_at ? new Date(o.created_at).toLocaleString('zh-CN') : '';
         const formatLabel = (o.original_format === 'pdf' ? 'DOCX' : (o.original_format || 'txt').toUpperCase());
+        const rechargeMeta = o.recharge_words > 0
+            ? `<span>💳 充值 ${Number(o.recharge_words).toLocaleString('zh-CN')} 词</span>`
+            : '';
+        const canRehumanize = ['paid', 'balance'].includes(o.payment_status);
+        const actions = isCompleted ? `
+            <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.order_id}')">查看详情</button>
+            <button class="btn btn-outline btn-sm" onclick="reDownload('${o.order_id}', '${o.original_format === 'pdf' ? 'docx' : (o.original_format || 'txt')}')">⬇️ 下载</button>
+            ${canRehumanize ? `<button class="btn btn-primary btn-sm" onclick="reHumanize('${o.order_id}')">🔄 继续优化</button>` : ''}
+        ` : '';
 
         return `
             <div class="order-card">
                 <div class="order-info">
-                    <div class="order-id-text">${o.order_id}</div>
+                    <div class="order-id-line">
+                        <div class="order-id-text">${o.order_id}</div>
+                        <span class="order-status ${statusClass}">${statusText}</span>
+                    </div>
                     <div class="order-meta">
                         <span>📅 ${createdDate}</span>
                         <span>📝 ${o.word_count || 0} 词</span>
                         <span class="order-format-badge">${formatLabel}</span>
-                        <span class="order-score-change ${improved}">
+                        ${rechargeMeta}
+                        ${isCompleted ? `<span class="order-score-change ${improved}">
                             ${improvementSign} ${Math.abs(improvement)}%
-                        </span>
+                        </span>` : ''}
                     </div>
                 </div>
                 <div class="order-actions">
-                    <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.order_id}')">查看详情</button>
-                    <button class="btn btn-outline btn-sm" onclick="reDownload('${o.order_id}', '${o.original_format === 'pdf' ? 'docx' : (o.original_format || 'txt')}')">⬇️ 下载</button>
-                    <button class="btn btn-primary btn-sm" onclick="reHumanize('${o.order_id}')">🔄 继续优化</button>
+                    ${actions}
                 </div>
             </div>
         `;

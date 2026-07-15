@@ -8,8 +8,17 @@ analysis helpers, auth decorator, and background task functions.
 import io
 import os
 import logging
+import uuid
+from datetime import datetime
 from functools import wraps
 from flask import g, session, jsonify, send_file
+
+
+def generate_order_id():
+    """Generate one consistent, human-readable order identifier."""
+    date_str = datetime.now().strftime("%Y%m%d")
+    random_str = uuid.uuid4().hex[:6].upper()
+    return f"ORD-{date_str}-{random_str}"
 
 
 # ========== Database Connection ==========
@@ -262,42 +271,118 @@ def do_background_rewrite(order_id, text, mode):
     except Exception:
         logging.exception(f"Background rewrite failed for {order_id}")
         try:
-            from app.models import get_connection, Order
+            from app.models import get_connection, Order, User, BalanceTransaction
             conn = get_connection()
             try:
+                order = Order.get_by_order_id(conn, order_id)
+                if order and order.get('payment_status') in ('paid', 'balance'):
+                    existing_refund = conn.execute(
+                        """SELECT id FROM balance_transactions
+                           WHERE order_id = ? AND transaction_type = 'rewrite_refund'""",
+                        (order_id,)
+                    ).fetchone()
+                    if not existing_refund:
+                        User.add_balance(conn, order['user_id'], order['word_count'])
+                        balance_after = User.get_balance(conn, order['user_id'])
+                        BalanceTransaction.create(
+                            conn, order['user_id'], 'rewrite_refund', order['word_count'],
+                            balance_after, order_id=order_id, description='改写失败退回词数'
+                        )
+                        conn.execute(
+                            "UPDATE orders SET balance_after = ? WHERE order_id = ?",
+                            (balance_after, order_id)
+                        )
                 Order.mark_failed(conn, order_id)
+            except Exception:
+                conn.rollback()
+                raise
             finally:
                 conn.close()
         except Exception:
             logging.exception(f"Failed to mark order {order_id} as failed")
 
 
-def process_payment_success(conn, order_id, trade_no):
+def process_payment_success(order_id, trade_no):
     """
     Internal function to handle successful payment.
     Marks order as paid and triggers rewrite via thread pool.
     Idempotent: skips if order is already in processing/completed/failed state.
     """
-    from app.models import Order
+    from app.models import Order, User, BalanceTransaction, get_connection
     from app.extensions import rewrite_executor
 
-    order = Order.get_by_order_id(conn, order_id)
-    if not order:
-        logging.error(f"Order {order_id} not found during payment processing")
-        return
-
-    # Idempotency check: skip if already processed (prevents race with webhook + polling)
-    current_payment_status = order.get('payment_status', 'pending')
-    if current_payment_status != 'pending':
-        logging.info(
-            f"Order {order_id} already in payment_status={current_payment_status}, "
-            f"skipping duplicate processing"
-        )
-        return
-
-    # Mark as paid (this transitions from 'pending' → 'paid'/'processing')
     from datetime import datetime, timezone
-    Order.mark_paid(conn, order_id, trade_no, datetime.now(timezone.utc).isoformat())
+    # Use a dedicated connection so this function always owns its transaction.
+    # The caller connection may have performed reads or writes before invoking us.
+    tx_conn = get_connection()
+    try:
+        tx_conn.execute("BEGIN IMMEDIATE")
+        order = Order.get_by_order_id(tx_conn, order_id)
+        if not order:
+            tx_conn.rollback()
+            logging.error(f"Order {order_id} not found during payment processing")
+            return False
+
+        current_payment_status = order.get('payment_status', 'pending')
+        if current_payment_status != 'pending':
+            tx_conn.rollback()
+            logging.info(
+                f"Order {order_id} already in payment_status={current_payment_status}, "
+                f"skipping duplicate processing"
+            )
+            return current_payment_status == 'paid'
+
+        user_id = order['user_id']
+        recharge_words = int(order.get('recharge_words') or order['word_count'])
+
+        # Payment always buys word balance first.
+        User.add_balance(tx_conn, user_id, recharge_words)
+        balance_after_recharge = User.get_balance(tx_conn, user_id)
+        BalanceTransaction.create(
+            tx_conn, user_id, 'payment_recharge', recharge_words,
+            balance_after_recharge, order_id=order_id,
+            reference_id=trade_no, description='支付宝充值'
+        )
+
+        # Then charge the rewrite from the unified balance wallet.
+        cursor = tx_conn.execute(
+            """UPDATE users SET word_balance = word_balance - ?
+               WHERE id = ? AND word_balance >= ?""",
+            (order['word_count'], user_id, order['word_count'])
+        )
+        if cursor.rowcount == 0:
+            tx_conn.execute(
+                """UPDATE orders
+                   SET payment_status = 'paid', status = 'awaiting_balance',
+                       alipay_trade_no = ?, paid_at = ?, balance_after = ?
+                   WHERE order_id = ? AND payment_status = 'pending'""",
+                (trade_no, datetime.now(timezone.utc).isoformat(),
+                 balance_after_recharge, order_id)
+            )
+            tx_conn.commit()
+            logging.warning(
+                f"Order {order_id} recharge succeeded but balance is still insufficient"
+            )
+            return False
+
+        balance_after = User.get_balance(tx_conn, user_id)
+        BalanceTransaction.create(
+            tx_conn, user_id, 'rewrite_consumption', -order['word_count'],
+            balance_after, order_id=order_id, description='改写任务扣费'
+        )
+        tx_conn.execute(
+            """UPDATE orders
+               SET payment_status = 'paid', status = 'processing',
+                   alipay_trade_no = ?, paid_at = ?, balance_after = ?
+               WHERE order_id = ? AND payment_status = 'pending'""",
+            (trade_no, datetime.now(timezone.utc).isoformat(), balance_after, order_id)
+        )
+        tx_conn.commit()
+    except Exception:
+        tx_conn.rollback()
+        raise
+    finally:
+        tx_conn.close()
 
     # Read mode from DB
     mode = order.get('mode', 'academic')
@@ -305,6 +390,7 @@ def process_payment_success(conn, order_id, trade_no):
 
     # Submit rewrite to thread pool (don't block the webhook response)
     rewrite_executor.submit(do_background_rewrite, order_id, text, mode)
+    return True
 
 
 def recover_processing_orders():

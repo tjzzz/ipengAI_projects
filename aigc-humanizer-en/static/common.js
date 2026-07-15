@@ -4,15 +4,50 @@
  */
 
 /* ========== CSRF HELPER ========== */
-function _csrfFetch(url, options) {
-    /* Attach X-CSRFToken header to POST/PUT/DELETE requests */
-    if (['POST', 'PUT', 'DELETE'].includes((options?.method || '').toUpperCase())) {
+async function _csrfFetch(url, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const needsCsrf = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+    let requestOptions = { ...options, credentials: 'same-origin' };
+
+    /* Attach the token rendered into the page. */
+    if (needsCsrf) {
         const token = document.querySelector('meta[name="csrf-token"]')?.content;
         if (token) {
-            options = { ...options, headers: { ...options?.headers, 'X-CSRFToken': token } };
+            requestOptions.headers = {
+                ...requestOptions.headers,
+                'X-CSRFToken': token
+            };
         }
     }
-    return fetch(url, options);
+
+    let response = await fetch(url, requestOptions);
+
+    /*
+     * A stale/restored page can hold a token from an expired server session.
+     * Refresh it and retry exactly once when the backend identifies a CSRF
+     * failure. Other 400 responses must pass through unchanged.
+     */
+    if (needsCsrf && response.status === 400 &&
+        response.headers.get('X-CSRF-Error') === '1') {
+        const tokenResponse = await fetch('/api/csrf-token', {
+            credentials: 'same-origin',
+            cache: 'no-store'
+        });
+        if (!tokenResponse.ok) return response;
+
+        const data = await tokenResponse.json();
+        if (!data.csrf_token) return response;
+
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) meta.content = data.csrf_token;
+        requestOptions.headers = {
+            ...requestOptions.headers,
+            'X-CSRFToken': data.csrf_token
+        };
+        response = await fetch(url, requestOptions);
+    }
+
+    return response;
 }
 
 /* ========== EXTRACTED TEXT (P0-2: on-demand fetch) ========== */

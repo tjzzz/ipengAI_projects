@@ -60,7 +60,7 @@ def index():
 
 @main_bp.route('/orders')
 def orders_page():
-    """Order history page — requires login."""
+    """Personal account page with balance and order history."""
     user_id = session.get('user_id')
     if not user_id:
         return render_template('orders.html', needs_login=True)

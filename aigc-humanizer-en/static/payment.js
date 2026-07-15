@@ -7,7 +7,8 @@
 /* ========== PAYMENT CONFIG ========== */
 let paymentConfig = {
     adapter_type: 'mock',
-    is_mock: true
+    is_mock: true,
+    recharge_packages: [2000, 5000, 10000]
 };
 
 async function fetchPaymentConfig() {
@@ -20,7 +21,11 @@ async function fetchPaymentConfig() {
     } catch (err) {
         console.error('Failed to fetch payment config:', err);
         // Default to mock mode if fetch fails
-        paymentConfig = { adapter_type: 'mock', is_mock: true };
+        paymentConfig = {
+            adapter_type: 'mock',
+            is_mock: true,
+            recharge_packages: [2000, 5000, 10000]
+        };
     }
 }
 
@@ -36,10 +41,12 @@ function showPaymentModal() {
     }
 }
 
-function showPaymentModalWithAiScore(wordCount, price, aiScore) {
+function showPaymentModalWithAiScore(wordCount, price, aiScore, balance = 0, shortfall = wordCount) {
     // Update display values
     document.getElementById('pay-word-count').textContent = `${wordCount} 词`;
     document.getElementById('pay-price').textContent = price === 0 ? '免费' : `¥${price.toFixed(2)}`;
+    document.getElementById('pay-current-balance').textContent = `${balance} 词`;
+    document.getElementById('pay-recharge-words').textContent = `${shortfall} 词`;
 
     // Update AI score display
     const aiScoreDisplay = document.getElementById('ai-score-display');
@@ -108,8 +115,13 @@ function renderPaymentQR(order, wordCount, price) {
     const formHtml = order.form_html;
 
     // Update payment modal content
-    document.getElementById('pay-word-count').textContent = wordCount + ' 词';
-    document.getElementById('pay-price').textContent = '¥' + parseFloat(price).toFixed(2);
+    const actualWordCount = order.word_count || wordCount;
+    const actualPrice = order.price !== undefined ? order.price : price;
+    document.getElementById('pay-word-count').textContent = actualWordCount + ' 词';
+    document.getElementById('pay-current-balance').textContent = `${order.balance || 0} 词`;
+    document.getElementById('pay-recharge-words').textContent = `${order.recharge_words || 0} 词`;
+    document.getElementById('pay-price').textContent = '¥' + parseFloat(actualPrice).toFixed(2);
+    renderRechargeOptions(order);
 
     // Show QR section in modal
     const qrSection = document.getElementById('payment-qr-section');
@@ -117,6 +129,7 @@ function renderPaymentQR(order, wordCount, price) {
 
     // ★ P1: 将 mode 存入 data 属性，供 refreshQRCode 读取
     qrSection.dataset.payMode = order.mode || 'academic';
+    qrSection.dataset.rechargeWords = order.recharge_words || 0;
     // Reset poll status
     document.getElementById('poll-status').innerHTML = '⏳ 等待支付中...';
     document.getElementById('poll-timer').textContent = '';
@@ -148,8 +161,8 @@ function renderPaymentQR(order, wordCount, price) {
                     const resp = await _csrfFetch(`/api/test/mock-payment/${order.order_id}`, { method: 'POST' });
                     const data = await resp.json();
                     if (data.success) {
-                        showToast('支付模拟成功！', 'success');
-                        document.getElementById('poll-status').innerHTML = '✅ 支付成功，正在改写...';
+                        showToast('充值成功，正在自动扣费并改写！', 'success');
+                        document.getElementById('poll-status').innerHTML = '✅ 充值成功，正在改写...';
                     } else {
                         showToast(data.error || '模拟失败', 'error');
                         newMockBtn.disabled = false;
@@ -249,6 +262,40 @@ function renderPaymentQR(order, wordCount, price) {
     }
 }
 
+function renderRechargeOptions(order) {
+    const container = document.getElementById('recharge-options');
+    if (!container) return;
+    const shortfall = Number(order.shortfall || order.recharge_words || 0);
+    const current = Number(order.recharge_words || shortfall);
+    const configuredPackages = Array.isArray(paymentConfig.recharge_packages)
+        ? paymentConfig.recharge_packages.map(Number).filter(Number.isFinite)
+        : [2000, 5000, 10000];
+    const choices = [shortfall, ...configuredPackages]
+        .filter(words => words >= shortfall)
+        .filter((words, index, array) => array.indexOf(words) === index);
+
+    container.innerHTML = `
+        <div class="recharge-options-label">选择充值档位</div>
+        <div class="recharge-option-list">
+            ${choices.map(words => `
+                <button type="button" class="recharge-option ${words === current ? 'active' : ''}"
+                        onclick="changeRechargePackage(${words})">
+                    ${words === shortfall ? '刚好补足' : Number(words).toLocaleString('zh-CN') + '词'}
+                    <small>${Number(words).toLocaleString('zh-CN')}词</small>
+                </button>
+            `).join('')}
+        </div>`;
+}
+
+async function changeRechargePackage(rechargeWords) {
+    const qrSection = document.getElementById('payment-qr-section');
+    const wordCount = parseInt(document.getElementById('pay-word-count').textContent.replace(/[^0-9]/g, ''));
+    const mode = qrSection ? (qrSection.dataset.payMode || 'academic') : 'academic';
+    if (Number(qrSection?.dataset.rechargeWords || 0) === rechargeWords) return;
+    showQRLoading();
+    await createPaymentOrder(wordCount, null, mode, rechargeWords);
+}
+
 async function refreshQRCode() {
     const refreshBtn = document.getElementById('qr-refresh-btn');
     if (refreshBtn) {
@@ -258,18 +305,12 @@ async function refreshQRCode() {
 
     try {
         const wordCount = parseInt(document.getElementById('pay-word-count').textContent.replace(/[^0-9]/g, ''));
-        const priceTxt = document.getElementById('pay-price').textContent.replace('¥', '').trim();
-        const price = parseFloat(priceTxt);
-        if (isNaN(price) || price <= 0) {
-            showToast('价格异常，请重新检测', 'error');
-            return;
-        }
-
         // ★ P1: 从 data 属性读取用户之前选的 mode，避免硬编码丢失
         const qrSection = document.getElementById('payment-qr-section');
         const payMode = qrSection ? (qrSection.dataset.payMode || 'academic') : 'academic';
+        const rechargeWords = Number(qrSection?.dataset.rechargeWords || 0) || null;
 
-        await createPaymentOrder(wordCount, price, payMode);
+        await createPaymentOrder(wordCount, null, payMode, rechargeWords);
 
         showToast('二维码已刷新', 'success');
     } catch (err) {
@@ -325,15 +366,27 @@ function startPaymentPolling(orderId) {
                 return;
             }
 
+            if (data.status === 'awaiting_balance') {
+                clearInterval(pollInterval);
+                document.getElementById('poll-status').innerHTML = '⚠️ ' + (data.message || '余额仍不足');
+                if (typeof updateNavBalance === 'function' && data.balance_after !== null) {
+                    updateNavBalance(data.balance_after);
+                }
+                return;
+            }
+
             if (data.payment_status === 'paid' || data.status === 'processing') {
-                document.getElementById('poll-status').innerHTML = '✅ 支付成功，正在改写...';
+                document.getElementById('poll-status').innerHTML = '✅ 充值成功，已自动扣费，正在改写...';
             }
 
             if (data.status === 'completed' && data.success) {
                 clearInterval(pollInterval);
                 closePaymentModal();
                 displayRewriteResult(data);
-                showToast('改写完成！', 'success');
+                if (typeof updateNavBalance === 'function' && data.balance_after !== null) {
+                    updateNavBalance(data.balance_after);
+                }
+                showToast(`改写完成！余额剩余 ${data.balance_after || 0} 词`, 'success');
 
                 // Baidu Tongji: track payment success + rewrite complete
                 if (typeof _hmt !== 'undefined') {
@@ -359,7 +412,7 @@ function startPaymentPolling(orderId) {
 }
 
 /* ========== CREATE PAYMENT ORDER ========== */
-async function createPaymentOrder(wordCount, price, mode = 'academic') {
+async function createPaymentOrder(wordCount, price, mode = 'academic', rechargeWords = null) {
     // Check login first
     if (!currentUser) {
         sessionStorage.setItem('pendingPaidAnalysis', 'true');
@@ -379,7 +432,11 @@ async function createPaymentOrder(wordCount, price, mode = 'academic') {
         const resp = await _csrfFetch('/api/create-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, mode: mode || 'academic' })
+            body: JSON.stringify({
+                text,
+                mode: mode || 'academic',
+                recharge_words: rechargeWords
+            })
         });
         const data = await resp.json();
 
@@ -396,13 +453,13 @@ async function createPaymentOrder(wordCount, price, mode = 'academic') {
         }
 
         // Render payment UI with QR code in modal
-        renderPaymentQR(data.order, wordCount, price);
+        renderPaymentQR(data.order, wordCount, data.order.price);
 
         // Start polling for payment status
         startPaymentPolling(data.order.order_id);
 
         // Baidu Tongji: track payment start
-        if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'ecommerce', 'payment_start', '', price]);
+        if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'ecommerce', 'payment_start', '', data.order.price]);
 
     } catch (err) {
         showToast(getNetworkErrorMessage(err), 'error');
@@ -537,10 +594,13 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         const paymentModalEl = document.getElementById('payment-modal');
         const authModalEl = document.getElementById('auth-modal');
+        const redeemModalEl = document.getElementById('redeem-modal');
         if (paymentModalEl && paymentModalEl.style.display === 'flex') {
             closePaymentModal();
         } else if (authModalEl && authModalEl.style.display === 'flex') {
             closeAuthModal();
+        } else if (redeemModalEl && redeemModalEl.style.display === 'flex') {
+            closeRedeemModal();
         }
     }
 });
