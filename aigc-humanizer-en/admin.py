@@ -327,14 +327,21 @@ def api_activation_codes():
     if word_quota < 100 or word_quota > 100000:
         return jsonify({'error': '词数在 100-100000 之间'}), 400
 
+    # quota label: 2000→2K, 10000→1W, 50000→5W
+    if word_quota >= 10000 and word_quota % 10000 == 0:
+        quota_label = f"{word_quota // 10000}W"
+    elif word_quota >= 1000 and word_quota % 1000 == 0:
+        quota_label = f"{word_quota // 1000}K"
+    else:
+        quota_label = str(word_quota)
+
     try:
         generated = []
         for _ in range(count):
-            # Format: HUMA-XXXX-XXXX-XXXX
+            # Format: HUMA-{quota}-XXXX-XXXX
             part1 = secrets.token_hex(2).upper()
             part2 = secrets.token_hex(2).upper()
-            part3 = secrets.token_hex(2).upper()
-            code = f"HUMA-{part1}-{part2}-{part3}"
+            code = f"HUMA-{quota_label}-{part1}-{part2}"
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "INSERT INTO activation_codes (code, word_quota, created_at) VALUES (?, ?, ?)",
@@ -620,7 +627,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('orders')" id="tab-orders">📋 订单</button>
-        <button class="tab-btn" onclick="switchTab('activation')" id="tab-activation">🎯 激活码</button>
+        <button class="tab-btn" onclick="switchTab('activation')" id="tab-activation">🎯 兑换码</button>
         <button class="tab-btn" onclick="switchTab('users')" id="tab-users">👤 用户</button>
     </div>
 
@@ -723,12 +730,12 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     <div class="tab-content" id="content-activation">
     <div class="main">
         <div class="toolbar">
-            <h2 style="font-size:1rem;font-weight:600;margin-right:16px;">🎯 激活码管理</h2>
+            <h2 style="font-size:1rem;font-weight:600;margin-right:16px;">🎯 兑换码管理</h2>
             <label>生成数量：</label>
             <input type="number" id="gen-count" value="10" min="1" max="100" style="width:70px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.9rem;">
             <label>每码词数：</label>
             <input type="number" id="gen-words" value="2000" min="100" max="100000" step="100" style="width:90px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.9rem;">
-            <button class="btn-query" onclick="generateCodes()">生成激活码</button>
+            <button class="btn-query" onclick="generateCodes()">生成兑换码</button>
             <span id="gen-result" style="font-size:0.85rem;color:#059669;margin-left:12px;"></span>
         </div>
 
@@ -755,13 +762,13 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         <!-- Codes table -->
         <div class="table-wrapper">
             <div class="table-header">
-                <h2>激活码列表</h2>
+                <h2>兑换码列表</h2>
                 <span class="count-badge" id="ac-count-badge">0 条</span>
             </div>
             <table>
                 <thead>
                     <tr>
-                        <th>激活码</th>
+                        <th>兑换码</th>
                         <th>词数</th>
                         <th>状态</th>
                         <th>兑换用户</th>
@@ -1097,7 +1104,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             // Table
             const tbody = document.getElementById('ac-tbody');
             if (data.codes.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">暂无激活码</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">暂无兑换码</td></tr>';
                 return;
             }
             tbody.innerHTML = data.codes.map(c => {
@@ -1114,7 +1121,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
                 </tr>`;
             }).join('');
         } catch (e) {
-            showError('加载激活码失败: ' + e.message);
+            showError('加载兑换码失败: ' + e.message);
         }
     }
 
@@ -1137,7 +1144,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             const data = await resp.json();
             if (data.error) { showError(data.error); return; }
 
-            resultEl.textContent = `✅ 已生成 ${data.count} 个激活码，每码 ${data.word_quota} 词`;
+            resultEl.textContent = `✅ 已生成 ${data.count} 个兑换码，每码 ${data.word_quota} 词`;
             // Show first few codes in result
             const codes = data.codes.slice(0, 3).map(c => c.code).join(', ');
             if (data.count > 3) {
@@ -1150,7 +1157,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             showError('生成失败: ' + e.message);
         } finally {
             btn.disabled = false;
-            btn.textContent = '生成激活码';
+            btn.textContent = '生成兑换码';
         }
     }
 
