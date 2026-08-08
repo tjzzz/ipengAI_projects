@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, session
 from app.extensions import limiter
-from app.helpers import get_db, login_required
+from app.helpers import get_db, login_required, _load_paragraphs
 
 orders_bp = Blueprint('orders', __name__)
 
@@ -85,7 +85,10 @@ def api_rehumanize(order_id):
         return jsonify({"error": "未登录"}), 401
 
     data = request.get_json(silent=True) or {}
-    mode = data.get('mode', 'academic')
+    # mode 语义为"改写粒度"：low/median/high，默认 low
+    mode = data.get('mode', 'low')
+    if mode not in ('low', 'median', 'high'):
+        mode = 'low'
 
     conn = get_db()
     order = Order.get_by_order_id(conn, order_id)
@@ -113,10 +116,16 @@ def api_rehumanize(order_id):
 
     try:
         base_text = order['rewritten_text'] or order['original_text']
-        humanized = humanizer.humanize(base_text, mode=mode)
+        paragraphs = _load_paragraphs(order)
+        humanized, rewritten_paragraphs = humanizer.humanize_structured(
+            base_text, mode=mode, paragraphs=paragraphs
+        )
         rewritten_analysis = run_analysis(humanized)
 
-        Order.update_rewrite(conn, order_id, humanized, rewritten_analysis.get('ai_score', 0))
+        Order.update_rewrite(
+            conn, order_id, humanized, rewritten_analysis.get('ai_score', 0),
+            rewritten_paragraphs=rewritten_paragraphs
+        )
 
         original_score = order.get('original_score', 0)
 

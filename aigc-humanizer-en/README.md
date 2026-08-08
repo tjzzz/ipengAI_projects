@@ -7,7 +7,7 @@
 | 功能 | 详情 |
 |------|------|
 | AI 文本检测 | 多维评分（困惑度、突发性、AI 模式、可读性、结构），段落级分析 |
-| 降 AI 改写 | 学术/深度两种模式，保留学术术语与专业表达 |
+| 降 AI 改写 | 三种粒度（段落/二级标题/一级标题），结构保护，保留标题/表格/参考文献/专业表达 |
 | 免费预览 | 支付前可预览改写效果（首段 200 词） |
 | 多格式支持 | 上传 .docx / .pdf / .txt / .md，输出保持原格式 |
 | 7 天无限修改 | 购买后 7 天内可反复改写，不限次数 |
@@ -85,7 +85,15 @@ aigc-humanizer-en/
 │   ├── __init__.py         # 应用工厂 create_app()
 │   ├── session.py          # 文件系统 Session 实现
 │   ├── extensions.py       # 共享实例（csrf, limiter, adapters, detectors）
-│   ├── helpers.py          # 工具函数（DB、文本提取、文件生成、后台任务）
+│   ├── helpers/            # 工具函数包（按功能分类）
+│   │   ├── __init__.py     # 重新导出所有公共函数
+│   │   ├── db.py           # 数据库连接 & 订单ID生成
+│   │   ├── auth.py         # 登录鉴权装饰器
+│   │   ├── analysis.py     # 检测结果辅助（风险等级 / 修改建议）
+│   │   ├── text_extract.py # 文本解析（docx/pdf/txt/md → 段落 dict）
+│   │   ├── segmenter.py    # 段落切分（结构保护 + mode 粒度改写）
+│   │   ├── file_output.py  # 下载文件生成（docx/md/txt）
+│   │   └── tasks.py        # 后台任务（支付处理 / 异步改写）
 │   ├── models.py           # 数据模型（User, Order）
 │   ├── humanize.py         # 改写引擎（规则版）
 │   ├── humanizer_adapter.py # 改写适配器（RuleBased + Api）
@@ -118,6 +126,132 @@ aigc-humanizer-en/
 │   └── SECURITY_REVIEW.md  # 安全审查报告
 └── test/                   # QA 测试文档
 ```
+
+## 核心脚本调用关系与业务流程
+
+### 脚本调用关系图
+
+```
+                        ┌──────────────────────┐
+                        │   app.py (入口)       │
+                        │  委托 app.create_app()│
+                        └──────────┬───────────┘
+                                   │ 读取配置
+                                   ▼
+                        ┌──────────────────────┐
+                        │ app/__init__.py      │  应用工厂 create_app()
+                        │ 装配 Adapter / 注册路由│
+                        └───────┬──────┬───────┘
+              ┌─────────────────┘      └─────────────────┐
+              ▼                                          ▼
+   ┌─────────────────────┐                   ┌─────────────────────┐
+   │ app/extensions.py   │                   │ app/helpers/        │
+   │ 全局对象: csrf /     │                   │ DB·解析·切分·后台任务 │
+   │ limiter / adapters  │◄────── 依赖 ───────┘                     │
+   └──────┬──────┬───────┘                                          │
+          │      │                                                 │
+          ▼      ▼                                                 ▼
+  ┌────────────┐  ┌───────────────┐                 ┌──────────────────────────┐
+  │ humanizer_ │  │  detector_    │                 │ app/routes/*.py 路由层     │
+  │ adapter    │  │  adapter      │                 │  ├ main      ── 页面       │
+  │ (改写适配器)│  │ (检测适配器)    │                 │  ├ analysis  ── 检测/解析   │
+  └─────┬──────┘  └──────┬────────┘                 │  ├ rewrite   ── 改写       │
+        │                │                         │  ├ payment   ── 支付       │
+        ▼                ▼                         │  ├ download  ── 下载       │
+  ┌────────────┐  ┌───────────────┐                │  └ orders    ── 订单       │
+  │ humanize.py│  │ ai_checker*.py│                └──────────────┬───────────┘
+  │ 规则改写引擎 │  │ 检测引擎(5维)  │                                   │ 调用
+  └────────────┘  └───────────────┘                                 ▼
+                                                    ┌──────────────────────────┐
+                                                    │ app/models.py (User/Order)│
+                                                    │ app/payment_adapter.py    │
+                                                    └──────────────────────────┘
+```
+
+### 核心业务流程
+
+#### ① 上传/粘贴 → AI 检测
+
+```
+上传文件(.docx/.pdf/.txt/.md) ─┐
+                              ├─► /api/analyze (app/routes/analysis.py)
+粘贴英文文本 ──────────────────┘         │
+                                        ▼
+                              app/helpers.extract_text()  ← 解析文件提取文本
+                                        │  (可配置开关 DELETE_UPLOADED_FILE 决定是否删除临时文件)
+                                        ▼
+                    app/detector_adapter.py → ai_checker.py (5维评分)
+                                        │
+                                        ▼
+                          返回 AI 分数 + 段落分析 + 修改建议
+```
+
+#### ② 改写（降 AI 率，含结构保护）
+
+```
+/api/rewrite (app/routes/rewrite.py)
+        │
+        ▼  (免费≤FREE_WORD_LIMIT 或 扣词数余额)
+app/helpers/segmenter.py  ← 按 mode 切分，结构保护（标题/表格/参考文献/短段不改写）
+        │   mode: paragraph=单段 | median=按二级标题 | high=按一级标题
+        ▼
+app/extensions.humanizer_adapter.humanize(text, mode, paragraphs)
+        │
+        ├── RuleBasedHumanizer ──► app/humanize.py (humanize_text 规则改写)
+        └── ApiHumanizer     ──► ai-text-humanizer.com API
+        │
+        ▼
+    改写前后分数对比（ai_detector）→ 保存 Order → 返回结果
+```
+
+#### ③ 付费改写（异步）
+
+```
+/api/create-payment → 生成订单 + QR码（订单保存段落结构 paragraphs）
+        ▼
+支付宝扫码 → 异步通知 /api/webhook/alipay
+        ▼
+app/helpers.process_payment_success() → 扣费 → 后台线程
+        ▼
+app/helpers.do_background_rewrite() → humanize(含结构保护) → 更新订单
+        ▼
+前端轮询 /api/payment-status/<id> → 展示改写结果
+```
+
+### 三个关键适配器（通过 config.py 切换）
+
+| 适配器 | 位置 | 实现 | 切换配置 |
+|--------|------|------|----------|
+| 检测 | `app/detector_adapter.py` | 规则引擎 / Sapling / Originality | `AI_DETECTOR_ADAPTER` |
+| 改写 | `app/humanizer_adapter.py` | RuleBased / ApiHumanizer | `HUMANIZER_ADAPTER` |
+| 支付 | `app/payment_adapter.py` | Mock / Alipay | `PAYMENT_ADAPTER` |
+
+### 改写粒度（mode）与结构保护
+
+改写前，`app/helpers/segmenter.py` 按 `mode` 切分文档，并做结构保护：
+
+| mode | 粒度 | 说明 |
+|------|------|------|
+| `paragraph` | 单段 | 每次改写一个正文段（默认） |
+| `median` | 二级标题 | 一个 Heading 2 下的正文合并改写 |
+| `high` | 一级标题 | 一个 Heading 1 下的正文合并改写 |
+
+**结构保护**（以下内容不参与改写，原样保留）：
+- 标题 / 目录（Heading、Title、toc 样式）
+- 表格占位（`{'table': N}`）
+- 参考文献（`Reference`/`Bibliography` 标题后的段落）
+- 短正文（无格式且词数 < `PROTECT_MIN_WORDS`）
+
+无对应级别标题时（如 `high` 找不到 Heading 1），自动**退化为按段落块分组**（块数根据正文总段数动态计算），保证任何文档都能正常改写。
+
+### 上传文件生命周期
+
+```
+上传 → 保存到 uploads/ → extract_text() 解析 → 解析后删除（DELETE_UPLOADED_FILE）
+```
+
+- `DELETE_UPLOADED_FILE = True`（默认）：解析完成即删除临时文件，不占磁盘
+- `DELETE_UPLOADED_FILE = False`：保留上传文件于 `uploads/`，便于排查
 
 ## API 文档
 

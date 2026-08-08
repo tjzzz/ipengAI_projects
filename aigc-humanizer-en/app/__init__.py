@@ -82,8 +82,8 @@ def create_app():
     set_adapters(payment_adapter, humanizer_adapter)
 
     # ── AI Detector ──
-    detect_fn, para_fn = create_detector(AI_DETECTOR_ADAPTER)
-    set_ai_detector(detect_fn, para_fn)
+    detect_fn = create_detector(AI_DETECTOR_ADAPTER)
+    set_ai_detector(detect_fn)
 
     # ── Safety check: mock adapter in production ──
     if app.config.get('PAYMENT_ADAPTER') == 'mock' and os.environ.get('FLASK_ENV') == 'production':

@@ -2,6 +2,7 @@
 Download route — download rewritten text in various formats.
 """
 
+import json
 import logging
 
 from flask import Blueprint, request, jsonify, session
@@ -49,11 +50,25 @@ def api_download(order_id):
     rewritten_text = order['rewritten_text']
     filename = order.get('original_filename', 'humanized')
 
+    # 读取改写后的结构化段落（含标题级别），供 docx 重建格式
+    rewritten_paragraphs = None
+    raw_paras = order.get('rewritten_paragraphs')
+    if raw_paras:
+        try:
+            parsed = json.loads(raw_paras)
+            if isinstance(parsed, list):
+                rewritten_paragraphs = parsed
+        except (ValueError, TypeError):
+            logger.warning("Failed to parse rewritten_paragraphs for order %s", order_id)
+
     try:
-        logger.info("Download order=%s, user=%s, format=%s, filename=%s (words=%s)",
+        logger.info("Download order=%s, user=%s, format=%s, filename=%s (words=%s, structured=%s)",
                     order_id, user_id, req_format, filename,
-                    len(rewritten_text.split()) if rewritten_text else 0)
-        return generate_file_response(rewritten_text, req_format, filename)
+                    len(rewritten_text.split()) if rewritten_text else 0,
+                    bool(rewritten_paragraphs))
+        return generate_file_response(
+            rewritten_text, req_format, filename, paragraphs=rewritten_paragraphs
+        )
     except Exception:
         logger.exception("Failed to generate download file for order %s (format=%s)", order_id, req_format)
         return jsonify({"error": "文件生成失败，请稍后重试"}), 500

@@ -8,7 +8,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import PROJ_ROOT
+from config import PROJ_ROOT, SIGNUP_BONUS_WORDS
 
 DB_DIR = os.path.join(PROJ_ROOT, 'instance')
 DB_PATH = os.path.join(DB_DIR, 'aigc_humanizer.db')
@@ -63,12 +63,15 @@ class User:
 
     @classmethod
     def create(cls, conn, email, password):
-        """Create a new user. Password is hashed via werkzeug.security."""
+        """Create a new user. Password is hashed via werkzeug.security.
+        注册即赠送 SIGNUP_BONUS_WORDS 词数余额。
+        """
         password_hash = generate_password_hash(password, method='pbkdf2:sha256')
         created_at = datetime.now(timezone.utc).isoformat()
         cursor = conn.execute(
-            "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
-            (email, password_hash, created_at)
+            "INSERT INTO users (email, password_hash, created_at, word_balance) "
+            "VALUES (?, ?, ?, ?)",
+            (email, password_hash, created_at, SIGNUP_BONUS_WORDS)
         )
         conn.commit()
         return cls.get_by_id(conn, cursor.lastrowid)
@@ -141,12 +144,13 @@ class Order:
                 user_id INTEGER,
                 order_id TEXT UNIQUE NOT NULL,
                 original_text TEXT NOT NULL,
+                paragraphs TEXT,
                 rewritten_text TEXT,
                 original_format TEXT DEFAULT 'txt',
                 original_filename TEXT,
                 word_count INTEGER,
                 price REAL,
-                mode TEXT DEFAULT 'academic',
+                mode TEXT DEFAULT 'low',
                 original_score REAL,
                 rewritten_score REAL,
                 status TEXT DEFAULT 'pending',
@@ -181,60 +185,45 @@ class Order:
             conn.execute("ALTER TABLE orders ADD COLUMN balance_words_used INTEGER DEFAULT 0")
         if 'balance_after' not in columns:
             conn.execute("ALTER TABLE orders ADD COLUMN balance_after INTEGER")
+        if 'paragraphs' not in columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN paragraphs TEXT")
+        if 'rewritten_paragraphs' not in columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN rewritten_paragraphs TEXT")
         conn.commit()
 
-    @classmethod
-    def create(cls, conn, user_id, order_id, original_text, rewritten_text,
-               original_format, original_filename, word_count, price, mode,
-               original_score, rewritten_score):
-        """Create a free rewrite order record (payment_status='free')."""
-        created_at = datetime.now(timezone.utc).isoformat()
-        expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
-        conn.execute(
-            """INSERT INTO orders
-               (user_id, order_id, original_text, rewritten_text,
-                original_format, original_filename, word_count, price, mode,
-                original_score, rewritten_score, status, payment_status,
-                created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', 'free', ?, ?)""",
-            (user_id, order_id, original_text, rewritten_text,
-             original_format, original_filename, word_count, price, mode,
-             original_score, rewritten_score, created_at, expires_at)
-        )
-        conn.commit()
+
 
     @classmethod
     def create_balance_order(cls, conn, user_id, order_id, original_text, rewritten_text,
                               original_format, original_filename, word_count, price, mode,
-                              original_score, rewritten_score):
-        """Create a balance-deducted rewrite order record (payment_status='balance')."""
+                              original_score, rewritten_score, rewritten_paragraphs=None):
+        """Create a balance-deducted rewrite order record (payment_status='balance').
+
+        rewritten_paragraphs: 可选，改写后的结构化段落列表（list[dict]，含
+        text/is_heading/heading_level/style），JSON 序列化后存入
+        orders.rewritten_paragraphs，供下载 Word 时重建标题格式。
+        """
+        import json
         created_at = datetime.now(timezone.utc).isoformat()
         expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        rewritten_paragraphs_json = json.dumps(
+            rewritten_paragraphs, ensure_ascii=False
+        ) if rewritten_paragraphs else None
         conn.execute(
             """INSERT INTO orders
                (user_id, order_id, original_text, rewritten_text,
                 original_format, original_filename, word_count, price, mode,
                 original_score, rewritten_score, status, payment_status,
-                balance_words_used, balance_after, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', 'balance', ?, ?, ?, ?)""",
+                balance_words_used, balance_after, rewritten_paragraphs,
+                created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', 'balance', ?, ?, ?, ?, ?)""",
             (user_id, order_id, original_text, rewritten_text,
              original_format, original_filename, word_count, price, mode,
              original_score, rewritten_score, word_count,
-             User.get_balance(conn, user_id), created_at, expires_at)
+             User.get_balance(conn, user_id), rewritten_paragraphs_json,
+             created_at, expires_at)
         )
         conn.commit()
-
-    @classmethod
-    def count_free_rewrites_today(cls, conn, user_id):
-        """统计今天已免费改写的次数（payment_status='free' 的订单）。"""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        row = conn.execute(
-            """SELECT COUNT(*) as cnt FROM orders
-               WHERE user_id = ? AND payment_status = 'free'
-               AND created_at >= ?""",
-            (user_id, today)
-        ).fetchone()
-        return row['cnt'] if row else 0
 
     @classmethod
     def get_by_user_id(cls, conn, user_id, page=1, per_page=10,
@@ -269,11 +258,19 @@ class Order:
         return dict(row) if row else None
 
     @classmethod
-    def update_rewrite(cls, conn, order_id, rewritten_text, rewritten_score):
+    def update_rewrite(cls, conn, order_id, rewritten_text, rewritten_score,
+                       rewritten_paragraphs=None):
         """Update the rewritten text and score for an existing order."""
+        import json
+        paragraphs_json = json.dumps(
+            rewritten_paragraphs, ensure_ascii=False
+        ) if rewritten_paragraphs else None
         conn.execute(
-            "UPDATE orders SET rewritten_text = ?, rewritten_score = ? WHERE order_id = ?",
-            (rewritten_text, rewritten_score, order_id)
+            """UPDATE orders
+               SET rewritten_text = ?, rewritten_score = ?,
+                   rewritten_paragraphs = ?
+               WHERE order_id = ?""",
+            (rewritten_text, rewritten_score, paragraphs_json, order_id)
         )
         conn.commit()
 
@@ -282,19 +279,27 @@ class Order:
     @classmethod
     def create_payment_record(cls, conn, user_id, order_id, original_text,
                                original_format, original_filename, word_count,
-                               price, mode, recharge_words, balance_words_used):
-        """Create a pending auto-recharge order tied to a rewrite task."""
+                               price, mode, recharge_words, balance_words_used,
+                               paragraphs=None):
+        """Create a pending auto-recharge order tied to a rewrite task.
+
+        paragraphs: 可选的段落结构（list[dict]，含 style/is_heading/is_reference
+        等），JSON 序列化后存入 orders.paragraphs，供异步后台改写读取。
+        """
+        import json
         created_at = datetime.now(timezone.utc).isoformat()
         expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        paragraphs_json = json.dumps(paragraphs, ensure_ascii=False) if paragraphs else None
         conn.execute(
             """INSERT INTO orders
-               (user_id, order_id, original_text, rewritten_text,
+               (user_id, order_id, original_text, paragraphs, rewritten_text,
                 original_format, original_filename, word_count, price, mode,
                 original_score, rewritten_score, status, payment_status,
                 alipay_amount, recharge_words, balance_words_used,
                 created_at, expires_at)
-               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, 'pending', 'pending', ?, ?, ?, ?, ?)""",
-            (user_id, order_id, original_text, original_format, original_filename,
+               VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, 'pending', 'pending', ?, ?, ?, ?, ?)""",
+            (user_id, order_id, original_text, paragraphs_json,
+             original_format, original_filename,
              word_count, price, mode, price, recharge_words, balance_words_used,
              created_at, expires_at)
         )
@@ -330,26 +335,33 @@ class Order:
         conn.commit()
 
     @classmethod
-    def update_result(cls, conn, order_id, rewritten_text, rewritten_score, original_score=None):
+    def update_result(cls, conn, order_id, rewritten_text, rewritten_score, original_score=None,
+                      rewritten_paragraphs=None):
         """Update order with rewrite result (called after humanization completes)."""
+        import json
+        paragraphs_json = json.dumps(
+            rewritten_paragraphs, ensure_ascii=False
+        ) if rewritten_paragraphs else None
         if original_score is not None:
             conn.execute(
                 """UPDATE orders 
                    SET rewritten_text = ?, 
                        rewritten_score = ?, 
                        original_score = ?,
+                       rewritten_paragraphs = ?,
                        status = 'completed'
                    WHERE order_id = ?""",
-                (rewritten_text, rewritten_score, original_score, order_id)
+                (rewritten_text, rewritten_score, original_score, paragraphs_json, order_id)
             )
         else:
             conn.execute(
                 """UPDATE orders 
                    SET rewritten_text = ?, 
                        rewritten_score = ?, 
+                       rewritten_paragraphs = ?,
                        status = 'completed'
                    WHERE order_id = ?""",
-                (rewritten_text, rewritten_score, order_id)
+                (rewritten_text, rewritten_score, paragraphs_json, order_id)
             )
         conn.commit()
 

@@ -50,14 +50,6 @@ async function _csrfFetch(url, options = {}) {
     return response;
 }
 
-/* ========== EXTRACTED TEXT (P0-2: on-demand fetch) ========== */
-function _fetchExtractedText() {
-    return _csrfFetch('/api/extracted-text', { method: 'GET' })
-        .then(res => res.ok ? res.json() : null)
-        .then(data => { if (data?.text) sessionStorage.setItem('lastExtractedText', data.text); })
-        .catch(() => {});
-}
-
 /* ========== DOM REFS ========== */
 /* Note: These may be null on pages like /orders — guard with null checks */
 const dropZone = document.getElementById('drop-zone');
@@ -181,8 +173,8 @@ function toggleDiffView() {
 
 /* ========== RESET ========== */
 function resetAnalysis() {
-    document.getElementById('result-section').style.display = 'none';
-    document.getElementById('rewrite-section').style.display = 'none';
+    const rs = document.getElementById('rewrite-section');
+    if (rs) rs.style.display = 'none';
     uploadedFile = null;
     latestResult = null;
     if (dropZone) {
@@ -205,13 +197,17 @@ function scrollToUpload() {
 }
 
 function scrollToResults() {
-    document.getElementById('result-section').scrollIntoView({ behavior: 'smooth' });
+    const rs = document.getElementById('rewrite-section');
+    if (rs && rs.style.display !== 'none') {
+        rs.scrollIntoView({ behavior: 'smooth' });
+    } else {
+        scrollToUpload();
+    }
 }
 
 /* ========== LOADING ========== */
 function showLoading() {
     document.getElementById('loading-section').style.display = 'block';
-    document.getElementById('result-section').style.display = 'none';
     document.getElementById('rewrite-section').style.display = 'none';
 
     // Animate loading steps

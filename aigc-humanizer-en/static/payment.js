@@ -128,7 +128,7 @@ function renderPaymentQR(order, wordCount, price) {
     qrSection.style.display = 'block';
 
     // ★ P1: 将 mode 存入 data 属性，供 refreshQRCode 读取
-    qrSection.dataset.payMode = order.mode || 'academic';
+    qrSection.dataset.payMode = order.mode || 'low';
     qrSection.dataset.rechargeWords = order.recharge_words || 0;
     // Reset poll status
     document.getElementById('poll-status').innerHTML = '⏳ 等待支付中...';
@@ -290,7 +290,7 @@ function renderRechargeOptions(order) {
 async function changeRechargePackage(rechargeWords) {
     const qrSection = document.getElementById('payment-qr-section');
     const wordCount = parseInt(document.getElementById('pay-word-count').textContent.replace(/[^0-9]/g, ''));
-    const mode = qrSection ? (qrSection.dataset.payMode || 'academic') : 'academic';
+    const mode = qrSection ? (qrSection.dataset.payMode || 'low') : 'low';
     if (Number(qrSection?.dataset.rechargeWords || 0) === rechargeWords) return;
     showQRLoading();
     await createPaymentOrder(wordCount, null, mode, rechargeWords);
@@ -307,7 +307,7 @@ async function refreshQRCode() {
         const wordCount = parseInt(document.getElementById('pay-word-count').textContent.replace(/[^0-9]/g, ''));
         // ★ P1: 从 data 属性读取用户之前选的 mode，避免硬编码丢失
         const qrSection = document.getElementById('payment-qr-section');
-        const payMode = qrSection ? (qrSection.dataset.payMode || 'academic') : 'academic';
+        const payMode = qrSection ? (qrSection.dataset.payMode || 'low') : 'low';
         const rechargeWords = Number(qrSection?.dataset.rechargeWords || 0) || null;
 
         await createPaymentOrder(wordCount, null, payMode, rechargeWords);
@@ -412,7 +412,7 @@ function startPaymentPolling(orderId) {
 }
 
 /* ========== CREATE PAYMENT ORDER ========== */
-async function createPaymentOrder(wordCount, price, mode = 'academic', rechargeWords = null) {
+async function createPaymentOrder(wordCount, price, mode = 'low', rechargeWords = null) {
     // Check login first
     if (!currentUser) {
         sessionStorage.setItem('pendingPaidAnalysis', 'true');
@@ -434,7 +434,7 @@ async function createPaymentOrder(wordCount, price, mode = 'academic', rechargeW
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 text,
-                mode: mode || 'academic',
+                mode: mode || 'low',
                 recharge_words: rechargeWords
             })
         });
@@ -479,49 +479,10 @@ async function startPaidAnalysis() {
     createPaymentOrder();
 }
 
-/* ========== PREVIEW REWRITE ========== */
-async function previewRewrite() {
-    const text = getCurrentText();
-    if (!text) {
-        showToast('没有可预览的文本', 'error');
-        return;
-    }
-
-    document.getElementById('preview-btn').disabled = true;
-    document.getElementById('preview-btn').textContent = '⏳ 正在预览...';
-
-    try {
-        const resp = await _csrfFetch('/api/preview-rewrite', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
-        });
-        const data = await resp.json();
-
-        if (data.error) {
-            showToast(data.error, 'error');
-            return;
-        }
-
-        document.getElementById('preview-result').style.display = 'block';
-        document.getElementById('preview-original-text').textContent = data.original_excerpt;
-        document.getElementById('preview-rewritten-text').textContent = data.rewritten_excerpt;
-        document.getElementById('preview-orig-score').textContent = `${data.original_score}%`;
-        document.getElementById('preview-new-score').textContent = `${data.rewritten_score}%`;
-    } catch (err) {
-        showToast(getNetworkErrorMessage(err), 'error');
-        console.error('预览出错:', err);
-    } finally {
-        document.getElementById('preview-btn').disabled = false;
-        document.getElementById('preview-btn').textContent = '👁️ 免费预览改写效果';
-    }
-}
-
 /* ========== DISPLAY REWRITE RESULT ========== */
 function displayRewriteResult(data) {
     const section = document.getElementById('rewrite-section');
     section.style.display = 'block';
-    document.getElementById('result-section').style.display = 'none';
 
     document.getElementById('rewrite-order-id').textContent = `订单号：${data.order_id}`;
 
@@ -635,7 +596,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const _p2 = document.getElementById('pay-btn-price');
 if (_p2) _p2.textContent = pr;
             showQRLoading();
-            createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
+            createPaymentOrder(wc, pr, pendingInfo.mode || 'low');
         }, 800);
     }
 });

@@ -5,8 +5,8 @@ Rewrite routes — execute text humanization and save order record.
 import logging
 from flask import Blueprint, request, jsonify, session
 from app.extensions import limiter
-from app.helpers import generate_order_id, get_db, login_required
-from config import PRICE_PER_1000_WORDS, FREE_WORD_LIMIT, FREE_DAILY_REWRITES
+from app.helpers import generate_order_id, get_db, login_required, rewrite_and_analyze
+from config import PRICE_PER_1000_WORDS
 
 rewrite_bp = Blueprint('rewrite', __name__)
 
@@ -20,18 +20,19 @@ def api_rewrite():
     Executes the humanization immediately and saves the order record.
     Requires login.
 
-    Payment priority:
-    1. FREE_WORD_LIMIT 以内 → 免费改写（有每日次数限制）
-    2. 超出免费额度 → 检查用户词数余额，足够则扣余额改写
-    3. 余额不足 → 返回 402 要求支付
+    Payment:
+    1. 检查用户词数余额（word_balance），足够则扣余额改写
+    2. 余额不足 → 返回 402 要求支付
     """
-    from app.extensions import humanizer_adapter as humanizer
-    from app.extensions import ai_detector as run_analysis
     from app.models import Order, User, BalanceTransaction
 
     data = request.get_json(silent=True) or {}
     text = data.get('text') or session.get('last_text', '')
-    mode = data.get('mode', 'academic')
+    # mode 语义为"改写粒度"：low/median/high
+    # 兼容旧值 academic/paragraph → 默认 low
+    mode = data.get('mode', 'low')
+    if mode not in ('low', 'median', 'high'):
+        mode = 'low'
 
     if not text:
         return jsonify({"error": "没有可改写的文本，请先分析"}), 400
@@ -42,64 +43,58 @@ def api_rewrite():
     payment_status = None
     balance_deducted = 0
 
-    # ── 免费改写（≤ FREE_WORD_LIMIT 词） ──
-    if word_count <= FREE_WORD_LIMIT:
-        conn = get_db()
-        today_count = Order.count_free_rewrites_today(conn, user_id)
-        if today_count >= FREE_DAILY_REWRITES:
-            return jsonify({"error": f"今日免费改写次数已达上限（{FREE_DAILY_REWRITES}次），请明日再试或付费"}), 429
-        payment_status = 'free'
-    else:
-        # ── 超出免费额度：检查词数余额 ──
-        conn = get_db()
-        balance = User.get_balance(conn, user_id)
-        if balance >= word_count:
-            # 余额扣减与消费流水必须在同一事务中提交。
-            try:
-                balance_remaining = User.deduct_balance(conn, user_id, word_count)
-                if balance_remaining is not None:
-                    BalanceTransaction.create(
-                        conn, user_id, 'rewrite_consumption', -word_count,
-                        balance_remaining, order_id=order_id, description='改写任务扣费'
-                    )
-                    conn.commit()
-            except Exception:
-                conn.rollback()
-                logging.exception(f"[BALANCE] Failed to charge user {user_id}")
-                return jsonify({"error": "余额扣费失败，请稍后重试"}), 500
+    # ── 检查词数余额，足够则扣余额改写 ──
+    conn = get_db()
+    balance = User.get_balance(conn, user_id)
+    if balance < word_count:
+        shortfall = word_count - balance
+        return jsonify({
+            "error": f"余额不足（当前 {balance} 词，需 {word_count} 词），还差 {shortfall} 词",
+            "balance": balance,
+            "word_count": word_count,
+            "shortfall": shortfall,
+            "need_payment": True
+        }), 402
 
-            if balance_remaining is None:
-                conn.rollback()
-                balance = User.get_balance(conn, user_id)
-                shortfall = word_count - balance
-                return jsonify({
-                    "error": f"余额不足（当前 {balance} 词，需 {word_count} 词），还差 {shortfall} 词",
-                    "balance": balance,
-                    "word_count": word_count,
-                    "shortfall": shortfall,
-                    "need_payment": True
-                }), 402
-            balance_deducted = word_count
-            payment_status = 'balance'
-            logging.info(f"[BALANCE] User {user_id} used balance: deducted {word_count} words, remaining: {balance_remaining}")
-        else:
-            # 余额不足，返回支付提示
-            shortfall = word_count - balance
-            return jsonify({
-                "error": f"余额不足（当前 {balance} 词，需 {word_count} 词），还差 {shortfall} 词",
-                "balance": balance,
-                "word_count": word_count,
-                "shortfall": shortfall,
-                "need_payment": True
-            }), 402
+    # 余额扣减与消费流水必须在同一事务中提交。
+    try:
+        balance_remaining = User.deduct_balance(conn, user_id, word_count)
+        if balance_remaining is not None:
+            BalanceTransaction.create(
+                conn, user_id, 'rewrite_consumption', -word_count,
+                balance_remaining, order_id=order_id, description='改写任务扣费'
+            )
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        logging.exception(f"[BALANCE] Failed to charge user {user_id}")
+        return jsonify({"error": "余额扣费失败，请稍后重试"}), 500
+
+    if balance_remaining is None:
+        conn.rollback()
+        balance = User.get_balance(conn, user_id)
+        shortfall = word_count - balance
+        return jsonify({
+            "error": f"余额不足（当前 {balance} 词，需 {word_count} 词），还差 {shortfall} 词",
+            "balance": balance,
+            "word_count": word_count,
+            "shortfall": shortfall,
+            "need_payment": True
+        }), 402
+    balance_deducted = word_count
+    payment_status = 'balance'
+    logging.info(f"[BALANCE] User {user_id} used balance: deducted {word_count} words, remaining: {balance_remaining}")
 
     price = round(PRICE_PER_1000_WORDS * (word_count / 1000), 2)
 
     try:
-        humanized = humanizer.humanize(text, mode=mode)
-
-        original_analysis = run_analysis(text)
-        rewritten_analysis = run_analysis(humanized)
+        # 传入段落结构（若存在），实现结构保护：标题/表格/参考文献/短段不改写
+        paragraphs = session.get('last_paragraphs')
+        result = rewrite_and_analyze(text, mode=mode, paragraphs=paragraphs)
+        humanized = result["humanized"]
+        rewritten_structured = result["rewritten_paragraphs"]
+        original_analysis = result["original_analysis"]
+        rewritten_analysis = result["rewritten_analysis"]
 
         # Build paragraph comparison for frontend display
         original_paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
@@ -122,36 +117,21 @@ def api_rewrite():
         original_filename = session.get('last_original_filename', None)
         try:
             conn = get_db()
-            if payment_status == 'free':
-                Order.create(
-                    conn,
-                    user_id=user_id,
-                    order_id=order_id,
-                    original_text=text,
-                    rewritten_text=humanized,
-                    original_format=original_format,
-                    original_filename=original_filename,
-                    word_count=word_count,
-                    price=price,
-                    mode=mode,
-                    original_score=original_analysis.get('ai_score', 0),
-                    rewritten_score=rewritten_analysis.get('ai_score', 0)
-                )
-            else:
-                Order.create_balance_order(
-                    conn,
-                    user_id=user_id,
-                    order_id=order_id,
-                    original_text=text,
-                    rewritten_text=humanized,
-                    original_format=original_format,
-                    original_filename=original_filename,
-                    word_count=word_count,
-                    price=price,
-                    mode=mode,
-                    original_score=original_analysis.get('ai_score', 0),
-                    rewritten_score=rewritten_analysis.get('ai_score', 0)
-                )
+            Order.create_balance_order(
+                conn,
+                user_id=user_id,
+                order_id=order_id,
+                original_text=text,
+                rewritten_text=humanized,
+                original_format=original_format,
+                original_filename=original_filename,
+                word_count=word_count,
+                price=price,
+                mode=mode,
+                original_score=original_analysis.get('ai_score', 0),
+                rewritten_score=rewritten_analysis.get('ai_score', 0),
+                rewritten_paragraphs=rewritten_structured
+            )
         except Exception:
             logging.exception("Failed to save order record, but rewrite result was returned")
 

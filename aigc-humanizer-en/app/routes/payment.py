@@ -48,7 +48,10 @@ def api_create_payment():
 
     data = request.get_json(silent=True) or {}
     text = data.get('text') or session.get('last_text', '')
-    mode = data.get('mode', 'academic')
+    # mode 语义为"改写粒度"：low/median/high，默认 low
+    mode = data.get('mode', 'low')
+    if mode not in ('low', 'median', 'high'):
+        mode = 'low'
 
     if not text:
         return jsonify({"error": "没有可改写的文本，请先分析"}), 400
@@ -89,9 +92,12 @@ def api_create_payment():
     original_format = session.get('last_original_format', 'txt')
     original_filename = session.get('last_original_filename', None)
     try:
+        # 保存段落结构（含 style/is_heading/is_reference），供异步改写做结构保护
+        paragraphs = session.get('last_paragraphs')
         Order.create_payment_record(
             conn, user_id, order_id, text, original_format, original_filename,
-            word_count, price, mode, recharge_words, min(balance, word_count)
+            word_count, price, mode, recharge_words, min(balance, word_count),
+            paragraphs=paragraphs
         )
         logging.info(
             f"[PAYMENT] Recharge order created: {order_id}, user={user_id}, "

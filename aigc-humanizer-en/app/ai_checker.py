@@ -366,24 +366,6 @@ def analyze_text(text: str) -> Dict:
     }
 
 
-def analyze_by_paragraphs(text: str) -> List[Dict]:
-    """Analyze text paragraph by paragraph."""
-    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-    results = []
-    
-    for i, paragraph in enumerate(paragraphs, 1):
-        if len(paragraph) >= 100:
-            analysis = analyze_text(paragraph)
-            results.append({
-                "paragraph": i,
-                "preview": paragraph[:100] + "..." if len(paragraph) > 100 else paragraph,
-                "ai_score": analysis.get("ai_score", 0),
-                "risk_level": analysis.get("risk_level", "Unknown")
-            })
-    
-    return results
-
-
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python ai_checker.py '<text>'")

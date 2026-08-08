@@ -17,7 +17,6 @@ rewrite_executor = ThreadPoolExecutor(max_workers=5)
 payment_adapter = None
 humanizer_adapter = None
 ai_detector = None          # analyze_text(text) -> dict
-ai_paragraph_detector = None  # analyze_by_paragraphs(text) -> list[dict]
 
 
 def set_adapters(payment, humanizer):
@@ -31,11 +30,10 @@ def set_adapters(payment, humanizer):
     )
 
 
-def set_ai_detector(detect_fn, paragraph_fn):
-    """Set AI detector functions (called once during app creation)."""
-    global ai_detector, ai_paragraph_detector
+def set_ai_detector(detect_fn):
+    """Set AI detector function (called once during app creation)."""
+    global ai_detector
     ai_detector = detect_fn
-    ai_paragraph_detector = paragraph_fn
     logging.info(
         f"AI detector initialized: {getattr(detect_fn, '__name__', '?')}"
     )

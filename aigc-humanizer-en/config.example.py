@@ -20,12 +20,13 @@ AI_TEXT_HUMANIZER_PASSWORD = ''
 
 PRICE_PER_1000_WORDS = 14.9
 RECHARGE_PACKAGE_WORDS = [2000, 5000, 10000]
-FREE_WORD_LIMIT = 500
+SIGNUP_BONUS_WORDS = 200
 
 ALLOWED_UPLOAD_MIMETYPES = {
     'text/plain', 'text/markdown', 'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 }
+DELETE_UPLOADED_FILE = True   # 上传文件解析完成后是否删除临时文件（True=删除，False=保留）
 
 ADMIN_PASSWORD = 'admin123'
 

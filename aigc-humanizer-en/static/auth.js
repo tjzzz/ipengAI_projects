@@ -181,17 +181,6 @@ async function handleLogin() {
         // Baidu Tongji: track login success
         if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'user', 'login_success']);
 
-        // Check for pending free rewrite after login
-        const pendingFree = sessionStorage.getItem('pendingFreeRewrite');
-        if (pendingFree) {
-            sessionStorage.removeItem('pendingFreeRewrite');
-            // Text was already stored in sessionStorage by handleAnalyzeResponse
-            setTimeout(() => {
-                handleFreeRewrite();
-            }, 300);
-            return;
-        }
-
         // Check for pending paid analysis after login
         const pendingPaid = sessionStorage.getItem('pendingPaidAnalysis');
         if (pendingPaid) {
@@ -204,7 +193,7 @@ async function handleLogin() {
                 const aiScore = parseInt(sessionStorage.getItem('lastAiScore') || '0');
                 showPaymentModalWithAiScore(wc, pr, aiScore);
                 showQRLoading();
-                createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
+                createPaymentOrder(wc, pr, pendingInfo.mode || 'low');
             }, 500);
         }
 
@@ -275,17 +264,6 @@ async function handleRegister() {
         // Baidu Tongji: track register success
         if (typeof _hmt !== 'undefined') _hmt.push(['_trackEvent', 'user', 'register_success']);
 
-        // Check for pending free rewrite after register
-        const pendingFree = sessionStorage.getItem('pendingFreeRewrite');
-        if (pendingFree) {
-            sessionStorage.removeItem('pendingFreeRewrite');
-            // Text was already stored in sessionStorage by handleAnalyzeResponse
-            setTimeout(() => {
-                handleFreeRewrite();
-            }, 300);
-            return;
-        }
-
         // Check for pending paid analysis after register
         const pendingPaid = sessionStorage.getItem('pendingPaidAnalysis');
         if (pendingPaid) {
@@ -298,7 +276,7 @@ async function handleRegister() {
                 const aiScore = parseInt(sessionStorage.getItem('lastAiScore') || '0');
                 showPaymentModalWithAiScore(wc, pr, aiScore);
                 showQRLoading();
-                createPaymentOrder(wc, pr, pendingInfo.mode || 'academic');
+                createPaymentOrder(wc, pr, pendingInfo.mode || 'low');
             }, 500);
         }
 

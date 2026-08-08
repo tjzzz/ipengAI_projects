@@ -540,32 +540,6 @@ def humanize_text(text: str, academic_mode: bool = True) -> str:
     return '\n\n'.join(humanized_paragraphs).strip()
 
 
-def humanize_by_sections(text: str, high_ai_sections: List[Dict] = None) -> str:
-    """
-    Humanize specific sections that have high AI scores.
-    If no sections specified, humanize entire text.
-    """
-    if not high_ai_sections:
-        return humanize_text(text)
-    
-    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-    modified_paragraphs = []
-    
-    for i, paragraph in enumerate(paragraphs, 1):
-        # Check if this paragraph should be humanized
-        should_humanize = any(
-            s.get("paragraph") == i and s.get("ai_score", 0) > 30
-            for s in high_ai_sections
-        )
-        
-        if should_humanize:
-            modified_paragraphs.append(humanize_text(paragraph))
-        else:
-            modified_paragraphs.append(paragraph)
-    
-    return '\n\n'.join(modified_paragraphs)
-
-
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python humanize.py '<text>' [academic|casual]")

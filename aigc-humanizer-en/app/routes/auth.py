@@ -56,7 +56,12 @@ def api_register():
         conn.commit()
         return jsonify({
             "success": True,
-            "user": {"id": user['id'], "email": user['email']}
+            "user": {
+                "id": user['id'],
+                "email": user['email'],
+                "word_balance": user.get('word_balance', 0),
+            },
+            "message": f"注册成功，已赠送 {user.get('word_balance', 0)} 词免费额度"
         }), 201
     except Exception:
         logging.exception("注册失败")
@@ -89,7 +94,11 @@ def api_login():
     conn.commit()
     return jsonify({
         "success": True,
-        "user": {"id": user['id'], "email": user['email']}
+        "user": {
+            "id": user['id'],
+            "email": user['email'],
+            "word_balance": user.get('word_balance', 0),
+        }
     })
 
 
@@ -119,7 +128,11 @@ def api_me():
         return response, 401
 
     response = jsonify({
-        "user": {"id": user['id'], "email": user['email']}
+        "user": {
+            "id": user['id'],
+            "email": user['email'],
+            "word_balance": user.get('word_balance', 0),
+        }
     })
     response.headers['Cache-Control'] = 'no-store, private'
     return response

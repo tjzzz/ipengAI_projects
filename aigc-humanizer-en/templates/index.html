@@ -92,16 +92,6 @@
                         上传英文论文或粘贴文字，一键检测 AI 率。精准改写、保留原意，<br>
                         轻松通过 Turnitin、GPTZero 等主流检测平台。
                     </p>
-                    <div class="hero-stats">
-                        <div class="stat-item">
-                            <span class="stat-number">7天</span>
-                            <span class="stat-label">无限修改</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-number">200词</span>
-                            <span class="stat-label">免费检测</span>
-                        </div>
-                    </div>
                 </div>
                 <div class="hero-upload" id="upload-area">
                     <form id="upload-form" class="upload-card">
@@ -115,27 +105,28 @@
                                 </svg>
                             </div>
                             <p class="drop-text">拖拽文档到此处，或 <span class="drop-link">点击选择文件</span></p>
-                            <p class="drop-hint">支持 .docx、.pdf、.txt、.md，最大 20MB</p>
-                            <input type="file" id="file-input" accept=".docx,.pdf,.txt,.md" hidden>
+                            <p class="drop-hint">支持 .docx、.txt、.md，最大 20MB</p>
+                            <input type="file" id="file-input" accept=".docx,.txt,.md" hidden>
                         </div>
 
                         <div class="divider"><span>或</span></div>
 
                         <!-- Text Paste -->
                         <div class="text-input-area">
-                            <textarea id="text-input" class="text-input" placeholder="直接粘贴你的英文文本到这里...&#10;&#10;支持 200 词的免费检测"></textarea>
+                            <textarea id="text-input" class="text-input" placeholder="直接粘贴文本到这里"></textarea>
                         </div>
 
                         <!-- Buttons -->
                         <div class="upload-actions">
-                            <button type="submit" class="btn btn-primary btn-lg" id="analyze-btn" aria-label="立即检测AI率">
-                                <span class="btn-label">立即检测 AI 率</span>
+                            <button type="submit" class="btn btn-primary btn-lg" id="analyze-btn" aria-label="一键改写">
+                                <span class="btn-label">🚀 一键改写</span>
                                 <svg class="btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <line x1="5" y1="12" x2="19" y2="12"/>
                                     <polyline points="12 5 19 12 12 19"/>
                                 </svg>
                             </button>
-                            <p class="upload-note">免费检测，无需注册。检测结果包含 AI 率、段落分析和修改建议。</p>
+                            <p class="upload-note">粘贴文本或上传文档，自动检测 AI 率并改写降 AIGC，保留原意与格式。</p>
+                            <p class="rewrite-status" id="rewrite-status"></p>
                         </div>
                     </form>
                 </div>
@@ -170,50 +161,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </section>
-
-    <!-- ============ RESULTS ============ -->
-    <section class="section result-section" id="result-section" style="display:none;">
-        <div class="container">
-            <!-- Score Overview -->
-            <div class="result-header">
-                <div class="result-score-card" id="score-card">
-                    <div class="score-ring-container">
-                        <svg class="score-ring" viewBox="0 0 120 120">
-                            <circle class="score-ring-bg" cx="60" cy="60" r="54"/>
-                            <circle class="score-ring-fill" id="score-fill" cx="60" cy="60" r="54"
-                                stroke-dasharray="339.292" stroke-dashoffset="339.292"/>
-                        </svg>
-                        <div class="score-number">
-                            <span id="ai-score-value">0</span><small>%</small>
-                        </div>
-                    </div>
-                    <div class="score-info">
-                        <h3 class="score-label" id="risk-level">正在分析...</h3>
-                        <p class="score-desc" id="risk-desc"></p>
-                        <div class="score-threshold">
-                            <span class="threshold-badge">⚠️ Turnitin 阈值 20%</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="result-actions">
-                    <button class="btn btn-primary" id="rewrite-btn" aria-label="自动改写降低AI率">
-                        <span id="rewrite-btn-text">✨ 自动改写降低 AI 率</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Sub-scores -->
-            <div class="sub-scores" id="sub-scores"></div>
-
-            <!-- Suggestions -->
-            <div class="suggestions-section">
-                <h3 class="section-title">📋 修改建议</h3>
-                <div class="suggestions-list" id="suggestions-list"></div>
-            </div>
-
         </div>
     </section>
 
@@ -567,7 +514,7 @@
                         </svg>
                     </button>
                     <div class="faq-answer">
-                        <p>支持上传 .docx（Word）、.pdf、.txt 和 .md（Markdown）格式文件，同时支持直接粘贴英文文本。单个文件最大 20MB。建议使用 .docx 格式以获得最佳兼容性。</p>
+                        <p>支持上传 .docx（Word）、.txt 和 .md（Markdown）格式文件，同时支持直接粘贴英文文本。单个文件最大 20MB。建议使用 .docx 格式以获得最佳兼容性。</p>
                     </div>
                 </div>
                 <div class="faq-item">
